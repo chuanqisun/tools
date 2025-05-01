@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>JSONL Viewer</title>
+    <style>
+      html, body { height: 100%; margin: 0; font-family: sans-serif; }
+      body { height: 100vh; margin: 0; }
+      #app-grid {
+        display: grid;
+        grid-template-rows: auto 1fr;
+        grid-template-columns: 350px 1fr;
+        grid-template-areas:
+          "header header"
+          "left-panel right-panel";
+        height: 100vh;
+        min-width: 600px;
+        min-height: 400px;
+      }
+      #header {
+        grid-area: header;
+        border-bottom: 1px solid #ccc;
+        padding: 8px 16px;
+        background: #f8f8f8;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+      #left-panel {
+        grid-area: left-panel;
+        border-right: 1px solid #ccc;
+        overflow: auto;
+        position: relative;
+        height: 100%;
+        background: #fff;
+      }
+      #list-viewport {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        overflow: auto;
+      }
+      .list-item {
+        height: 32px; line-height: 32px; padding: 0 8px;
+        border-bottom: 1px solid #eee; cursor: pointer;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        background: none; font-family: monospace; font-size: 14px;
+        position: absolute;
+        width: 100%;
+        box-sizing: border-box;
+      }
+      .list-item.selected { background: #e0eaff; }
+      #right-panel {
+        grid-area: right-panel;
+        padding: 16px; overflow: auto; font-family: monospace;
+        font-size: 15px; white-space: pre-wrap; word-break: break-all;
+        background: #fafbfc;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app-grid">
+      <div id="header">
+        <button id="open-btn">Open JSONL File</button>
+        <span id="file-info" style="color:#888"></span>
+      </div>
+      <div id="left-panel">
+        <div id="list-viewport"></div>
+      </div>
+      <div id="right-panel">Select a line to view its JSON.</div>
+    </div>
+    <script>
+      // --- Constants ---
+      const ITEM_HEIGHT = 32; // px
+      const SKELETON_BUFFER = 5;
+
+      // --- DOM Elements ---
+      const openBtn = document.getElementById("open-btn");
+      const fileInfo = document.getElementById("file-info");
+      const leftPanel = document.getElementById("left-panel");
+      const listViewport = document.getElementById("list-viewport");
+      const rightPanel = document.getElementById("right-panel");
+
+      // --- State ---
+      let fileHandle = null;
+      let file = null;
+      let lineOffsets = []; // [{start, end}]
+      let lineCount = 0;
+      let selectedIdx = null;
+      let observer = null;
+      let renderedItems = new Map();
+
+      // --- File Open and Scan ---
+      openBtn.onclick = async () => {
+        try {
+          [fileHandle] = await window.showOpenFilePicker({
+            types: [{ description: "JSONL", accept: { "application/jsonl": [".jsonl", ".jsonl.txt", ".ndjson"] } }],
+          });
+          file = await fileHandle.getFile();
+          fileInfo.textContent = file.name + " (" + (file.size / 1024).toFixed(1) + " KB)";
+          await scanFileForOffsets(file);
+          setupListSkeleton();
+        } catch (e) {
+          // User cancelled or error
+          // No modal, no error message needed
+        }
+      };
+
+      // Scan file for line offsets (byte positions, UTF-8 safe)
+      async function scanFileForOffsets(file) {
+        lineOffsets = [];
+        const CHUNK_SIZE = 1024 * 1024; // 1MB
+        let fileSize = file.size;
+        let pos = 0;
+        let start = 0;
+        let leftover = new Uint8Array(0);
+
+        while (pos < fileSize) {
+          let endPos = Math.min(pos + CHUNK_SIZE, fileSize);
+          let chunk = new Uint8Array(await file.slice(pos, endPos).arrayBuffer());
+          // If leftover from previous chunk, prepend
+          if (leftover.length > 0) {
+            let combined = new Uint8Array(leftover.length + chunk.length);
+            combined.set(leftover, 0);
+            combined.set(chunk, leftover.length);
+            chunk = combined;
+          }
+          let lastNewlineIdx = 0;
+          for (let i = 0; i < chunk.length; ++i) {
+            if (chunk[i] === 0x0a) {
+              // '\n'
+              let lineStart = start;
+              let lineEnd = pos + i + 1 - leftover.length;
+              lineOffsets.push({ start: lineStart, end: lineEnd });
+              start = lineEnd;
+              lastNewlineIdx = i + 1;
+            }
+          }
+          // Save leftover bytes (after last newline)
+          if (lastNewlineIdx < chunk.length) {
+            leftover = chunk.slice(lastNewlineIdx);
+          } else {
+            leftover = new Uint8Array(0);
+          }
+          pos = endPos;
+        }
+        // Handle last line if file does not end with newline
+        if (start < file.size) {
+          lineOffsets.push({ start, end: file.size });
+        }
+        lineCount = lineOffsets.length;
+      }
+
+      // --- Virtualized List Skeleton ---
+      function setupListSkeleton() {
+        listViewport.innerHTML = "";
+        listViewport.style.height = lineCount * ITEM_HEIGHT + "px";
+        renderedItems.clear();
+        selectedIdx = null;
+        rightPanel.textContent = "Select a line to view its JSON.";
+
+        let viewportHeight = leftPanel.clientHeight || 400; // fallback
+        let visibleCount = Math.ceil(viewportHeight / ITEM_HEIGHT);
+
+        // Render items to fill viewport + buffer
+        for (let i = 0; i < Math.min(lineCount, visibleCount + 2 * SKELETON_BUFFER); ++i) {
+          let idx = i;
+          let item = document.createElement("div");
+          item.className = "list-item";
+          item.style.top = idx * ITEM_HEIGHT + "px";
+          item.dataset.idx = idx;
+          listViewport.appendChild(item);
+          renderedItems.set(idx, item);
+        }
+        observeVisibleItems();
+      }
+
+      // --- Intersection Observer for Virtualization ---
+      function observeVisibleItems() {
+        if (observer) observer.disconnect();
+        observer = new IntersectionObserver(onIntersect, {
+          root: leftPanel,
+          rootMargin: "0px",
+          threshold: 0.1,
+        });
+        for (let item of renderedItems.values()) {
+          observer.observe(item);
+        }
+        leftPanel.onscroll = onScroll;
+        onScroll();
+      }
+
+      function onScroll() {
+        let scrollTop = leftPanel.scrollTop;
+        let viewportHeight = leftPanel.clientHeight;
+        let firstIdx = Math.max(0, Math.floor(scrollTop / ITEM_HEIGHT) - SKELETON_BUFFER);
+        let lastIdx = Math.min(lineCount - 1, Math.ceil((scrollTop + viewportHeight) / ITEM_HEIGHT) + SKELETON_BUFFER);
+
+        // Remove items not in range
+        for (let idx of Array.from(renderedItems.keys())) {
+          if (idx < firstIdx || idx > lastIdx) {
+            let el = renderedItems.get(idx);
+            observer.unobserve(el);
+            el.remove();
+            renderedItems.delete(idx);
+          }
+        }
+        // Add missing items
+        for (let idx = firstIdx; idx <= lastIdx; ++idx) {
+          if (!renderedItems.has(idx)) {
+            let item = document.createElement("div");
+            item.className = "list-item";
+            item.style.top = idx * ITEM_HEIGHT + "px";
+            item.dataset.idx = idx;
+            listViewport.appendChild(item);
+            renderedItems.set(idx, item);
+            observer.observe(item);
+          }
+        }
+      }
+
+      function onIntersect(entries) {
+        for (let entry of entries) {
+          if (entry.isIntersecting) {
+            let idx = Number(entry.target.dataset.idx);
+            if (!entry.target.dataset.loaded) {
+              loadLinePreview(idx, entry.target);
+            }
+          }
+        }
+      }
+
+      // --- Load and Render Line Preview (UTF-8 safe) ---
+      async function loadLinePreview(idx, el) {
+        let { start, end } = lineOffsets[idx];
+        let blob = file.slice(start, end);
+        let arr = new Uint8Array(await blob.arrayBuffer());
+        let text = new TextDecoder().decode(arr).replace(/\r?\n$/, "");
+        let preview = text.trim();
+        if (preview.length > 120) preview = preview.slice(0, 120) + "...";
+        el.textContent = preview;
+        el.dataset.loaded = "1";
+        el.onclick = () => selectLine(idx, el);
+        if (selectedIdx === idx) el.classList.add("selected");
+        else el.classList.remove("selected");
+      }
+
+      // --- Select and Show Detail (UTF-8 safe) ---
+      async function selectLine(idx, el) {
+        if (selectedIdx !== null && renderedItems.has(selectedIdx)) {
+          renderedItems.get(selectedIdx).classList.remove("selected");
+        }
+        selectedIdx = idx;
+        el.classList.add("selected");
+        let { start, end } = lineOffsets[idx];
+        let blob = file.slice(start, end);
+        let arr = new Uint8Array(await blob.arrayBuffer());
+        let text = new TextDecoder().decode(arr).replace(/\r?\n$/, "");
+        try {
+          let obj = JSON.parse(text);
+          rightPanel.textContent = JSON.stringify(obj, null, 2);
+        } catch (e) {
+          rightPanel.textContent = "Invalid JSON:\n" + text;
+        }
+      }
+
+      // --- Preserve scroll position on resize ---
+      window.addEventListener("resize", () => {
+        if (lineCount > 0) {
+          const scrollTop = leftPanel.scrollTop;
+          setupListSkeleton();
+          leftPanel.scrollTop = scrollTop;
+        }
+      });
+    </script>
+  </body>
+</html>
