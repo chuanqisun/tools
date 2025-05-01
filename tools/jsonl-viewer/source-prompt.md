@@ -16,3 +16,4 @@
   - You can first scan the entire file to get the number of lines, and where each line begins and ends in terms of byte offset. Do NOT persist the file in memory.
   - Render the skeleton of items based on number of lines. Make sure each item is fixed height. In the DOM, use attribute to save the byte offset of the item.
   - As user scrolls up/down, use intersection observer to determine which items should be loaded into and cleared from the skeleton.
+</requirements>
