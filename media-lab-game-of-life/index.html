@@ -90,15 +90,15 @@
     <div id="controls">
       <label for="gutter"
         >Gapping between logos:
-        <input type="number" id="gutter" min="0" max="40" value="7" step="1" />
+        <input type="number" id="gutter" min="0" max="40" value="14" step="1" />
       </label>
-      <button id="reset">Reset</button>
       <label for="speed"
         >Speed (ms/step):
         <input type="number" id="speed" min="20" max="1000" value="100" step="10" />
       </label>
       <button id="step">Step</button>
       <button id="play">Play</button>
+      <button id="reset">Reset</button>
     </div>
     <div id="canvas-container">
       <canvas id="life"></canvas>
@@ -350,7 +350,7 @@
       let grid, nextGrid, initialGrid;
       let playing = false;
       let playInterval = null;
-      let stepDelay = 180; // ms, default
+      let stepDelay = 100; // ms, default
 
       // --- DOM ---
       const canvas = document.getElementById("life");
@@ -533,16 +533,18 @@
       // --- Event Listeners ---
       gutterInput.addEventListener("input", (e) => {
         let val = parseInt(gutterInput.value, 10);
-        if (isNaN(val) || val < 2) val = 2;
+        if (isNaN(val) || val < 0) val = 0; // Allow 0 gapping
         if (val > 40) val = 40;
         gutterInput.value = val;
         gutter = val;
-        // Don't reset immediately, only on "reset"
+        // Automatically stop and reset when gapping changes
+        stopPlay();
+        resetLife();
       });
 
       speedInput.addEventListener("input", (e) => {
         let val = parseInt(speedInput.value, 10);
-        if (isNaN(val) || val < 50) val = 50;
+        if (isNaN(val) || val < 20) val = 20;
         if (val > 1000) val = 1000;
         speedInput.value = val;
         stepDelay = val;
@@ -570,14 +572,10 @@
 
       // --- Init ---
       function init() {
-        // Set initial speed from input
+        // Set initial speed and gutter from input
         stepDelay = parseInt(speedInput.value, 10);
-        computeGridSize();
-        fitCanvasToContainer();
-        clearGrid();
-        placeLogos();
-        saveInitialGrid();
-        drawGrid();
+        gutter = parseInt(gutterInput.value, 10);
+        resetLife();
       }
       init();
     </script>
