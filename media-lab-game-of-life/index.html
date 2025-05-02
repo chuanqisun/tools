@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>Media Lab Logos - Game of Life</title>
+    <title>Media Lab Logos - Game of Life (Wrapped)</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <style>
       html, body {
@@ -90,7 +90,7 @@
     <div id="controls">
       <label for="gutter"
         >Gapping between logos:
-        <input type="number" id="gutter" min="0" max="40" value="7" step="1" />
+        <input type="number" id="gutter" min="0" max="40" value="14" step="1" />
       </label>
       <label for="speed"
         >Speed (ms/step):
@@ -408,7 +408,10 @@
           for (let dy = 0; dy < LOGO_SIZE; ++dy) {
             for (let dx = 0; dx < LOGO_SIZE; ++dx) {
               if (logo[dy][dx]) {
-                grid[y0 + dy][x0 + dx] = 1;
+                // Use modulo to wrap around the grid
+                const gridX = (x0 + dx) % gridW;
+                const gridY = (y0 + dy) % gridH;
+                grid[gridY][gridX] = 1;
               }
             }
           }
@@ -435,7 +438,7 @@
             }
           }
         }
-        // Draw grid lines (light gray)
+        // Draw grid lines (light gray) - Optional, can remove for a cleaner look
         ctx.save();
         ctx.strokeStyle = "#e0e0e0";
         ctx.lineWidth = Math.max(1, cellSize * 0.08);
@@ -457,11 +460,10 @@
         for (let dy = -1; dy <= 1; ++dy) {
           for (let dx = -1; dx <= 1; ++dx) {
             if (dy === 0 && dx === 0) continue;
-            const ny = y + dy,
-              nx = x + dx;
-            if (ny >= 0 && ny < gridH && nx >= 0 && nx < gridW) {
-              n += grid[ny][nx];
-            }
+            // Use modulo for wrapping
+            const ny = (y + dy + gridH) % gridH;
+            const nx = (x + dx + gridW) % gridW;
+            n += grid[ny][nx];
           }
         }
         return n;

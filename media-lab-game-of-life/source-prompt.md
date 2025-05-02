@@ -17,7 +17,10 @@ The "padding" for the entire canvas should be 14 cells. The "gutter" between log
     - **Play/Pause Button:** Toggle the automatic simulation playback.
     - **Reset Button:** Stop the game and reset the grid to the initial logo configuration using the current gapping value.
   </behavior>
-  <canvas>Make sure all the logos share one canvas and so they can run into each other</canvas>
+  <canvas>
+    Make sure all the logos share one canvas and so they can run into each other
+    The canvas wraps around, essentially infinitely large
+  </canvas>
   <interaction>
     - User can dynamically adjust the gapping between the logos using the input field. Changing the gapping value automatically stops the game and resets the grid.
     - User can adjust the simulation speed using the input field.
