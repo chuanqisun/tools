@@ -1,2 +1,3 @@
-- [markdown-preview](./markdown-preview)
-- [jsonl-viewer](./jsonl-viewer)
+- [Markdown preview](./markdown-preview)
+- [Media Lab Game of Life](./markdown-preview)
+- [JSONL viewer](./jsonl-viewer)
