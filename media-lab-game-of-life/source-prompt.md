@@ -8,17 +8,28 @@ Write a single HTML file showing 17 logos evolving following the game of life ru
 *   *   *
 *       *
 * * * * *
-The "gutter" between logos should be 14 cells
-The "padding" for the entire canvas should be 14 cells
-  </layout>
-  <behavior>Reset button, Step button, and Play/Pause toggle button</behavior>
+The "padding" for the entire canvas should be 14 cells. The "gutter" between logos is adjustable by the user.</layout>
+  <behavior>
+    - **Controls:** Display controls in a header area above the canvas.
+    - **Gapping Input:** Allow the user to adjust the "gapping" (gutter) between logos using a number input (default 14, range 0-40). Changing this value automatically stops the game and resets the grid with the new gapping.
+    - **Speed Input:** Allow the user to adjust the simulation speed using a number input (default 100ms, range 20-1000ms).
+    - **Step Button:** Advance the simulation by one step. Stops the game if playing.
+    - **Play/Pause Button:** Toggle the automatic simulation playback.
+    - **Reset Button:** Stop the game and reset the grid to the initial logo configuration using the current gapping value.
+  </behavior>
   <canvas>Make sure all the logos share one canvas and so they can run into each other</canvas>
-  <interaction>Let user dynamically adjust the gapping between the logos (default to 14) before the game starts. User can always click "reset" again to reset the game to the latest gapping. Let the user dynamically adjust the simulation speed (delay between steps in milliseconds, default to 180).
+  <interaction>
+    - User can dynamically adjust the gapping between the logos using the input field. Changing the gapping value automatically stops the game and resets the grid.
+    - User can adjust the simulation speed using the input field.
+    - User can control the simulation flow with Step, Play, and Reset buttons.
+    - Clicking "Reset" always resets the game to the initial state based on the *current* gapping value in the input field.
+  </interaction>
   <style>Light theme. Only use white/black/grey colors</style>
-  <responsive>Make sure the canvas takes full width and height (with some padding so it doesn't touch screen edge. If users add more gapping, the canvas grid just becomes denser without expanding in size</responsive>
+  <responsive>Make sure the canvas takes full width and height (with some padding so it doesn't touch screen edge). If users add more gapping, the canvas grid just becomes denser without expanding in size.</responsive>
 <requirements>
 
 I have the following logos as bitmaps:
+
 ```js
 const logos = [
   {
@@ -226,4 +237,3 @@ const logos = [
     ],
   },
 ];
-```
