@@ -15,14 +15,23 @@
       }
       header {
         background: #fff;
-        border-bottom: 1px solid #e1e4e8;
-        padding: 0.75em 2em;
+        border-bottom: 1px solid #d0d7de;
+        padding: 0.5em 2em;
         display: flex;
         align-items: center;
         justify-content: space-between;
+        height: 56px;
+        box-sizing: border-box;
+      }
+      header h1 {
         font-size: 1.2em;
+        margin: 0;
         font-weight: 600;
-        letter-spacing: 0.5px;
+        letter-spacing: 0.02em;
+      }
+      .header-buttons {
+        display: flex;
+        gap: 0.5em;
       }
       header button {
         background: #2da44e;
@@ -32,6 +41,7 @@
         padding: 0.5em 1.2em;
         font-size: 1em;
         cursor: pointer;
+        font-weight: 500;
         transition: background 0.2s;
       }
       header button:hover {
@@ -40,33 +50,34 @@
       .container {
         display: grid;
         grid-template-columns: 1fr 1fr;
+        gap: 0;
         height: calc(100vh - 56px);
-        min-height: 400px;
       }
       .markdown-input {
         border: none;
-        border-right: 1px solid #e1e4e8;
-        padding: 2em;
-        font-size: 1em;
-        font-family: 'Fira Mono', 'Consolas', 'Menlo', monospace;
-        background: #fff;
-        resize: none;
+        border-right: 1px solid #d0d7de;
         width: 100%;
         height: 100%;
+        font-size: 1em;
+        font-family: 'Fira Mono', 'Consolas', 'Menlo', monospace;
+        padding: 2em;
         box-sizing: border-box;
+        background: #fff;
+        resize: none;
         outline: none;
       }
       .preview-pane {
         background: #fff;
         overflow: auto;
-        padding: 2em 0;
+        height: 100%;
+        padding: 0;
       }
       .markdown-body {
-        box-sizing: border-box;
         min-width: 200px;
-        max-width: 900px;
+        max-width: 980px;
         margin: 0 auto;
-        padding: 0 2em;
+        padding: 2em;
+        box-sizing: border-box;
         background: #fff;
       }
       @media (max-width: 900px) {
@@ -75,43 +86,59 @@
           grid-template-rows: 1fr 1fr;
         }
         .markdown-input, .preview-pane {
+          height: 50vh;
+          border-right: none;
+          border-bottom: 1px solid #d0d7de;
+        }
+        .preview-pane {
+          border-bottom: none;
+        }
+      }
+      @media (max-width: 600px) {
+        .markdown-body, .markdown-input {
           padding: 1em;
         }
       }
     </style>
-    <!-- Marked.js for Markdown parsing -->
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   </head>
   <body>
     <header>
-      <span>GitHub Markdown Preview Tool</span>
-      <button id="downloadBtn">Download .md</button>
+      <h1>GitHub Markdown Preview Tool</h1>
+      <div class="header-buttons">
+        <button id="downloadMdBtn">Download Markdown</button>
+        <button id="downloadBtn">Download HTML</button>
+      </div>
     </header>
     <div class="container">
-      <textarea class="markdown-input" id="markdownInput" placeholder="Paste or type your Markdown here...">
-# Welcome!
+      <textarea class="markdown-input" id="markdownInput" placeholder="Paste your Markdown here...">
+# Welcome
 
-Paste or type Markdown on the left.
+Paste your **Markdown** on the left.
 
-- Live preview on the right
-- Styled like GitHub
-- Download your Markdown
+- See the preview on the right
+- Download as GitHub-styled HTML
 
-**Enjoy!**
+---
+
+> Built with vanilla JS.
 </textarea
       >
       <div class="preview-pane">
         <article class="markdown-body" id="preview"></article>
       </div>
     </div>
+    <!-- Marked.js for Markdown parsing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
     <script>
       const input = document.getElementById("markdownInput");
       const preview = document.getElementById("preview");
       const downloadBtn = document.getElementById("downloadBtn");
+      const downloadMdBtn = document.getElementById("downloadMdBtn"); // NEW
 
       function updatePreview() {
-        // Use Marked to parse markdown to HTML
-        preview.innerHTML = marked.parse(input.value);
+        const md = input.value;
+        const html = marked.parse(md);
+        preview.innerHTML = html;
       }
 
       input.addEventListener("input", updatePreview);
@@ -120,17 +147,67 @@ Paste or type Markdown on the left.
       updatePreview();
 
       downloadBtn.addEventListener("click", function () {
-        const blob = new Blob([input.value], { type: "text/markdown" });
+        const md = input.value;
+        const htmlContent = marked.parse(md);
+
+        // HTML template with GitHub markdown CSS
+        const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Markdown Preview</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.8.1/github-markdown-light.min.css">
+  <style>
+    .markdown-body {
+      box-sizing: border-box;
+      min-width: 200px;
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 45px;
+    }
+    @media (max-width: 767px) {
+      .markdown-body {
+        padding: 15px;
+      }
+    }
+    body {
+      background: #f6f8fa;
+    }
+  </style>
+</head>
+<body>
+  <article class="markdown-body">
+    ${htmlContent}
+  </article>
+</body>
+</html>`;
+
+        const blob = new Blob([html], { type: "text/html" });
         const url = URL.createObjectURL(blob);
+
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "markdown-preview.html";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      });
+
+      // NEW: Download Markdown button handler
+      downloadMdBtn.addEventListener("click", function () {
+        const md = input.value;
+        const blob = new Blob([md], { type: "text/markdown" });
+        const url = URL.createObjectURL(blob);
+
         const a = document.createElement("a");
         a.href = url;
         a.download = "markdown.md";
         document.body.appendChild(a);
         a.click();
-        setTimeout(() => {
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-        }, 0);
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
       });
     </script>
   </body>
