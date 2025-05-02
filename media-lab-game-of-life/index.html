@@ -1,552 +1,585 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Media Lab Logos - Game of Life</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <style>
-    html, body {
-      height: 100%;
-      margin: 0;
-      padding: 0;
-      background: #fff;
-      color: #222;
-      font-family: system-ui, sans-serif;
-    }
-    body {
-      min-height: 100vh;
-      box-sizing: border-box;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: flex-start;
-      padding: 2vw;
-    }
-    #controls {
-      display: flex;
-      gap: 1em;
-      align-items: center;
-      margin-bottom: 1em;
-      flex-wrap: wrap;
-    }
-    label {
-      font-size: 1em;
-      color: #444;
-    }
-    input[type="number"] {
-      width: 3em;
-      font-size: 1em;
-      padding: 0.2em;
-      border: 1px solid #bbb;
-      border-radius: 3px;
-      background: #fafafa;
-      color: #222;
-    }
-    button {
-      background: #fff;
-      color: #222;
-      border: 1px solid #bbb;
-      border-radius: 3px;
-      padding: 0.4em 1.2em;
-      font-size: 1em;
-      cursor: pointer;
-      transition: background 0.15s;
-    }
-    button:active {
-      background: #eee;
-    }
-    #canvas-container {
-      width: 100%;
-      max-width: 98vw;
-      max-height: 80vh;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      box-sizing: border-box;
-      background: #f7f7f7;
-      border: 1px solid #eee;
-      border-radius: 8px;
-      padding: 1vw;
-    }
-    canvas {
-      display: block;
-      width: 100%;
-      height: 100%;
-      background: #fff;
-      box-shadow: 0 2px 8px #0001;
-      border-radius: 6px;
-      border: 1px solid #ddd;
-      touch-action: none;
-    }
-    @media (max-width: 600px) {
-      #canvas-container {
-        max-height: 60vh;
-        padding: 0.5vw;
+  <head>
+    <meta charset="UTF-8" />
+    <title>Media Lab Logos - Game of Life</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <style>
+      html, body {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        background: #fff;
+        color: #222;
+        font-family: system-ui, sans-serif;
       }
-    }
-  </style>
-</head>
-<body>
-  <div id="controls">
-    <label for="gutter">Gapping between logos:
-      <input type="number" id="gutter" min="2" max="40" value="14" step="1">
-    </label>
-    <button id="reset">Reset</button>
-    <button id="step">Step</button>
-    <button id="play">Play</button>
-  </div>
-  <div id="canvas-container">
-    <canvas id="life"></canvas>
-  </div>
-<script>
-const logos = [
-  {
-    groupName: "camera culture",
-    logo: [
-      [1,1,1,1,1,1,1],
-      [1,0,0,0,0,0,0],
-      [1,0,1,1,1,1,1],
-      [1,0,1,0,0,0,0],
-      [1,0,1,1,1,1,1],
-      [1,0,0,0,0,0,0],
-      [1,1,1,1,1,1,1],
-    ],
-  },
-  {
-    groupName: "fluid interfaces",
-    logo: [
-      [1,0,1,0,1,1,1],
-      [1,0,1,0,0,1,0],
-      [1,0,1,0,0,1,0],
-      [1,0,1,0,0,1,0],
-      [1,0,1,0,1,1,1],
-      [1,0,1,0,0,0,0],
-      [1,1,1,1,1,1,1],
-    ],
-  },
-  {
-    groupName: "affective computing",
-    logo: [
-      [1,1,1,1,1,1,1],
-      [1,0,1,0,0,0,0],
-      [1,0,1,0,1,1,1],
-      [1,0,1,0,1,0,0],
-      [1,0,1,0,1,1,1],
-      [1,0,1,0,0,0,0],
-      [1,1,1,1,1,1,1],
-    ],
-  },
-  {
-    groupName: "biomechatronics",
-    logo: [
-      [1,1,1,1,1,1,1],
-      [1,0,0,0,0,0,1],
-      [1,0,0,0,0,0,1],
-      [1,0,1,1,1,1,0],
-      [1,0,0,0,0,0,1],
-      [1,0,0,0,0,0,1],
-      [1,1,1,1,1,1,1],
-    ],
-  },
-  {
-    groupName: "changing places",
-    logo: [
-      [1,1,1,1,1,1,1],
-      [1,0,0,0,0,0,0],
-      [1,0,1,1,1,1,0],
-      [1,0,1,0,0,1,0],
-      [1,0,1,1,1,1,1],
-      [1,0,0,0,0,0,0],
-      [1,1,1,1,1,1,1],
-    ],
-  },
-  {
-    groupName: "civic media",
-    logo: [
-      [1,1,1,1,1,0,0],
-      [0,0,0,0,1,0,0],
-      [1,1,1,0,1,1,1],
-      [1,0,0,0,0,0,1],
-      [1,0,0,0,0,0,1],
-      [1,0,0,0,0,0,1],
-      [1,1,1,1,1,0,1],
-    ],
-  },
-  {
-    groupName: "design fiction",
-    logo: [
-      [1,0,0,1,0,0,0],
-      [1,0,0,1,0,0,0],
-      [1,1,1,1,1,1,1],
-      [0,0,0,0,0,0,0],
-      [0,1,1,1,1,1,0],
-      [1,0,0,0,0,0,1],
-      [1,1,1,1,1,1,1],
-    ],
-  },
-  {
-    groupName: "human dynamics",
-    logo: [
-      [0,1,1,1,1,1,0],
-      [1,0,0,0,0,0,1],
-      [1,1,1,1,1,1,1],
-      [0,0,0,0,0,0,0],
-      [1,1,1,1,1,1,1],
-      [0,0,0,1,0,0,0],
-      [1,1,1,1,1,1,1],
-    ],
-  },
-  {
-    groupName: "mit media lab",
-    logo: [
-      [1,1,1,1,0,0,0],
-      [0,0,0,1,0,0,0],
-      [0,0,0,1,0,0,0],
-      [1,0,0,1,1,1,1],
-      [1,0,0,0,0,0,1],
-      [1,0,0,0,0,0,1],
-      [1,1,1,1,0,0,1],
-    ],
-  },
-  {
-    groupName: "lifelong kindergarten",
-    logo: [
-      [1,0,1,0,0,0,1],
-      [1,0,1,0,0,1,1],
-      [1,0,1,1,1,0,0],
-      [1,0,1,0,0,1,1],
-      [1,0,1,0,0,0,1],
-      [1,0,0,0,0,0,0],
-      [1,1,1,1,1,1,1],
-    ],
-  },
-  {
-    groupName: "macro connections",
-    logo: [
-      [0,0,1,1,1,1,1],
-      [0,0,1,0,0,0,0],
-      [1,1,1,0,0,0,0],
-      [1,0,0,1,1,1,1],
-      [1,0,0,1,0,0,0],
-      [1,0,0,1,0,0,0],
-      [1,0,0,1,1,1,1],
-    ],
-  },
-  {
-    groupName: "mediated matter",
-    logo: [
-      [1,1,1,1,1,0,0],
-      [0,0,0,0,1,0,0],
-      [1,1,1,0,1,1,1],
-      [0,0,1,0,0,0,1],
-      [0,0,1,1,1,0,1],
-      [0,0,0,0,1,0,1],
-      [0,0,0,0,1,0,1],
-    ],
-  },
-  {
-    groupName: "molecular machines",
-    logo: [
-      [1,1,1,1,1,1,1],
-      [1,0,0,1,0,0,1],
-      [1,0,0,1,0,0,1],
-      [0,0,0,0,0,0,0],
-      [1,1,1,1,1,1,1],
-      [1,0,0,1,0,0,1],
-      [1,0,0,1,0,0,1],
-    ],
-  },
-  {
-    groupName: "object-based media",
-    logo: [
-      [1,1,1,0,1,0,0],
-      [1,0,1,0,1,1,1],
-      [1,0,1,0,1,0,1],
-      [1,1,1,0,1,1,1],
-      [0,0,0,0,0,0,0],
-      [1,1,1,1,1,1,1],
-      [1,0,0,1,0,0,1],
-    ],
-  },
-  {
-    groupName: "opera of the future",
-    logo: [
-      [1,1,1,1,1,1,1],
-      [0,0,0,0,1,0,1],
-      [1,1,1,0,1,0,1],
-      [1,0,1,0,1,0,1],
-      [1,0,1,0,1,0,1],
-      [1,0,1,0,1,0,1],
-      [1,1,1,0,1,0,1],
-    ],
-  },
-  {
-    groupName: "personal robots",
-    logo: [
-      [1,1,1,1,1,1,1],
-      [1,0,0,0,0,0,1],
-      [1,1,1,1,1,1,1],
-      [1,0,0,0,0,0,0],
-      [1,0,1,1,0,1,1],
-      [1,0,1,0,1,0,0],
-      [1,0,1,1,1,1,1],
-    ],
-  },
-  {
-    groupName: "playful systems",
-    logo: [
-      [1,1,1,0,1,1,1],
-      [1,0,1,0,1,0,0],
-      [1,0,1,0,1,1,1],
-      [1,0,1,0,0,0,1],
-      [1,0,1,0,1,1,1],
-      [1,0,1,0,0,0,0],
-      [1,1,1,1,1,1,1],
-    ],
-  },
-];
-
-// --- Layout constants ---
-const LOGO_SIZE = 7; // 7x7
-const GRID_ROWS = 5;
-const GRID_COLS = 5;
-const LOGO_POSITIONS = [
-  // 5x5 grid, star pattern, 17 logos
-  // Row 0: 0 1 2 3 4
-  {r:0,c:0}, {r:0,c:1}, {r:0,c:2}, {r:0,c:3}, {r:0,c:4},
-  // Row 1: 0 4
-  {r:1,c:0}, {r:1,c:4},
-  // Row 2: 0 2 4
-  {r:2,c:0}, {r:2,c:2}, {r:2,c:4},
-  // Row 3: 0 4
-  {r:3,c:0}, {r:3,c:4},
-  // Row 4: 0 1 2 3 4
-  {r:4,c:0}, {r:4,c:1}, {r:4,c:2}, {r:4,c:3}, {r:4,c:4},
-];
-// LOGO_POSITIONS.length === 17
-
-// --- State ---
-let gutter = 14; // default, in cells
-let padding = 14; // always in cells
-let cellSize = 1; // px, will be set dynamically
-let gridW, gridH; // in cells
-let grid, nextGrid, initialGrid;
-let playing = false;
-let playInterval = null;
-let stepDelay = 180; // ms
-
-// --- DOM ---
-const canvas = document.getElementById('life');
-const ctx = canvas.getContext('2d');
-const gutterInput = document.getElementById('gutter');
-const resetBtn = document.getElementById('reset');
-const stepBtn = document.getElementById('step');
-const playBtn = document.getElementById('play');
-const container = document.getElementById('canvas-container');
-
-// --- Functions ---
-
-function computeGridSize() {
-  // The grid is: padding + (logo+gutter)*4 + logo + padding
-  // (5 logos per row/col, 4 gutters between them)
-  gridW = padding + (LOGO_SIZE + gutter) * (GRID_COLS - 1) + LOGO_SIZE + padding;
-  gridH = padding + (LOGO_SIZE + gutter) * (GRID_ROWS - 1) + LOGO_SIZE + padding;
-}
-
-function fitCanvasToContainer() {
-  // Responsive: fit canvas to container, keep square cells
-  // Use devicePixelRatio for sharpness
-  const dpr = window.devicePixelRatio || 1;
-  // Container size
-  const w = container.clientWidth;
-  const h = container.clientHeight;
-  // Compute cell size to fit grid
-  cellSize = Math.floor(Math.min(w / gridW, h / gridH) * dpr);
-  // Set canvas size
-  canvas.width = gridW * cellSize;
-  canvas.height = gridH * cellSize;
-  canvas.style.width = (gridW * cellSize / dpr) + 'px';
-  canvas.style.height = (gridH * cellSize / dpr) + 'px';
-}
-
-function clearGrid() {
-  grid = [];
-  for (let y = 0; y < gridH; ++y) {
-    grid[y] = [];
-    for (let x = 0; x < gridW; ++x) {
-      grid[y][x] = 0;
-    }
-  }
-}
-
-function placeLogos() {
-  // Place each logo at its grid position
-  for (let i = 0; i < logos.length; ++i) {
-    const {logo} = logos[i];
-    const {r, c} = LOGO_POSITIONS[i];
-    // Compute top-left cell for this logo
-    const x0 = padding + c * (LOGO_SIZE + gutter);
-    const y0 = padding + r * (LOGO_SIZE + gutter);
-    for (let dy = 0; dy < LOGO_SIZE; ++dy) {
-      for (let dx = 0; dx < LOGO_SIZE; ++dx) {
-        if (logo[dy][dx]) {
-          grid[y0 + dy][x0 + dx] = 1;
+      body {
+        min-height: 100vh;
+        box-sizing: border-box;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-start;
+        padding: 2vw;
+      }
+      #controls {
+        display: flex;
+        gap: 1em;
+        align-items: center;
+        margin-bottom: 1em;
+        flex-wrap: wrap;
+      }
+      label {
+        font-size: 1em;
+        color: #444;
+      }
+      input[type="number"] {
+        width: 3em;
+        font-size: 1em;
+        padding: 0.2em;
+        border: 1px solid #bbb;
+        border-radius: 3px;
+        background: #fafafa;
+        color: #222;
+      }
+      button {
+        background: #fff;
+        color: #222;
+        border: 1px solid #bbb;
+        border-radius: 3px;
+        padding: 0.4em 1.2em;
+        font-size: 1em;
+        cursor: pointer;
+        transition: background 0.15s;
+      }
+      button:active {
+        background: #eee;
+      }
+      #canvas-container {
+        width: 100%;
+        max-width: 98vw;
+        max-height: 80vh;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        box-sizing: border-box;
+        background: #f7f7f7;
+        border: 1px solid #eee;
+        border-radius: 8px;
+        padding: 1vw;
+      }
+      canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+        background: #fff;
+        box-shadow: 0 2px 8px #0001;
+        border-radius: 6px;
+        border: 1px solid #ddd;
+        touch-action: none;
+      }
+      @media (max-width: 600px) {
+        #canvas-container {
+          max-height: 60vh;
+          padding: 0.5vw;
         }
       }
-    }
-  }
-}
+    </style>
+  </head>
+  <body>
+    <div id="controls">
+      <label for="gutter"
+        >Gapping between logos:
+        <input type="number" id="gutter" min="2" max="40" value="14" step="1" />
+      </label>
+      <label for="speed"
+        >Speed (ms/step):
+        <input type="number" id="speed" min="50" max="1000" value="180" step="10" />
+      </label>
+      <button id="reset">Reset</button>
+      <button id="step">Step</button>
+      <button id="play">Play</button>
+    </div>
+    <div id="canvas-container">
+      <canvas id="life"></canvas>
+    </div>
+    <script>
+      const logos = [
+        {
+          groupName: "camera culture",
+          logo: [
+            [1, 1, 1, 1, 1, 1, 1],
+            [1, 0, 0, 0, 0, 0, 0],
+            [1, 0, 1, 1, 1, 1, 1],
+            [1, 0, 1, 0, 0, 0, 0],
+            [1, 0, 1, 1, 1, 1, 1],
+            [1, 0, 0, 0, 0, 0, 0],
+            [1, 1, 1, 1, 1, 1, 1],
+          ],
+        },
+        {
+          groupName: "fluid interfaces",
+          logo: [
+            [1, 0, 1, 0, 1, 1, 1],
+            [1, 0, 1, 0, 0, 1, 0],
+            [1, 0, 1, 0, 0, 1, 0],
+            [1, 0, 1, 0, 0, 1, 0],
+            [1, 0, 1, 0, 1, 1, 1],
+            [1, 0, 1, 0, 0, 0, 0],
+            [1, 1, 1, 1, 1, 1, 1],
+          ],
+        },
+        {
+          groupName: "affective computing",
+          logo: [
+            [1, 1, 1, 1, 1, 1, 1],
+            [1, 0, 1, 0, 0, 0, 0],
+            [1, 0, 1, 0, 1, 1, 1],
+            [1, 0, 1, 0, 1, 0, 0],
+            [1, 0, 1, 0, 1, 1, 1],
+            [1, 0, 1, 0, 0, 0, 0],
+            [1, 1, 1, 1, 1, 1, 1],
+          ],
+        },
+        {
+          groupName: "biomechatronics",
+          logo: [
+            [1, 1, 1, 1, 1, 1, 1],
+            [1, 0, 0, 0, 0, 0, 1],
+            [1, 0, 0, 0, 0, 0, 1],
+            [1, 0, 1, 1, 1, 1, 0],
+            [1, 0, 0, 0, 0, 0, 1],
+            [1, 0, 0, 0, 0, 0, 1],
+            [1, 1, 1, 1, 1, 1, 1],
+          ],
+        },
+        {
+          groupName: "changing places",
+          logo: [
+            [1, 1, 1, 1, 1, 1, 1],
+            [1, 0, 0, 0, 0, 0, 0],
+            [1, 0, 1, 1, 1, 1, 0],
+            [1, 0, 1, 0, 0, 1, 0],
+            [1, 0, 1, 1, 1, 1, 1],
+            [1, 0, 0, 0, 0, 0, 0],
+            [1, 1, 1, 1, 1, 1, 1],
+          ],
+        },
+        {
+          groupName: "civic media",
+          logo: [
+            [1, 1, 1, 1, 1, 0, 0],
+            [0, 0, 0, 0, 1, 0, 0],
+            [1, 1, 1, 0, 1, 1, 1],
+            [1, 0, 0, 0, 0, 0, 1],
+            [1, 0, 0, 0, 0, 0, 1],
+            [1, 0, 0, 0, 0, 0, 1],
+            [1, 1, 1, 1, 1, 0, 1],
+          ],
+        },
+        {
+          groupName: "design fiction",
+          logo: [
+            [1, 0, 0, 1, 0, 0, 0],
+            [1, 0, 0, 1, 0, 0, 0],
+            [1, 1, 1, 1, 1, 1, 1],
+            [0, 0, 0, 0, 0, 0, 0],
+            [0, 1, 1, 1, 1, 1, 0],
+            [1, 0, 0, 0, 0, 0, 1],
+            [1, 1, 1, 1, 1, 1, 1],
+          ],
+        },
+        {
+          groupName: "human dynamics",
+          logo: [
+            [0, 1, 1, 1, 1, 1, 0],
+            [1, 0, 0, 0, 0, 0, 1],
+            [1, 1, 1, 1, 1, 1, 1],
+            [0, 0, 0, 0, 0, 0, 0],
+            [1, 1, 1, 1, 1, 1, 1],
+            [0, 0, 0, 1, 0, 0, 0],
+            [1, 1, 1, 1, 1, 1, 1],
+          ],
+        },
+        {
+          groupName: "mit media lab",
+          logo: [
+            [1, 1, 1, 1, 0, 0, 0],
+            [0, 0, 0, 1, 0, 0, 0],
+            [0, 0, 0, 1, 0, 0, 0],
+            [1, 0, 0, 1, 1, 1, 1],
+            [1, 0, 0, 0, 0, 0, 1],
+            [1, 0, 0, 0, 0, 0, 1],
+            [1, 1, 1, 1, 0, 0, 1],
+          ],
+        },
+        {
+          groupName: "lifelong kindergarten",
+          logo: [
+            [1, 0, 1, 0, 0, 0, 1],
+            [1, 0, 1, 0, 0, 1, 1],
+            [1, 0, 1, 1, 1, 0, 0],
+            [1, 0, 1, 0, 0, 1, 1],
+            [1, 0, 1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 0, 0, 0],
+            [1, 1, 1, 1, 1, 1, 1],
+          ],
+        },
+        {
+          groupName: "macro connections",
+          logo: [
+            [0, 0, 1, 1, 1, 1, 1],
+            [0, 0, 1, 0, 0, 0, 0],
+            [1, 1, 1, 0, 0, 0, 0],
+            [1, 0, 0, 1, 1, 1, 1],
+            [1, 0, 0, 1, 0, 0, 0],
+            [1, 0, 0, 1, 0, 0, 0],
+            [1, 0, 0, 1, 1, 1, 1],
+          ],
+        },
+        {
+          groupName: "mediated matter",
+          logo: [
+            [1, 1, 1, 1, 1, 0, 0],
+            [0, 0, 0, 0, 1, 0, 0],
+            [1, 1, 1, 0, 1, 1, 1],
+            [0, 0, 1, 0, 0, 0, 1],
+            [0, 0, 1, 1, 1, 0, 1],
+            [0, 0, 0, 0, 1, 0, 1],
+            [0, 0, 0, 0, 1, 0, 1],
+          ],
+        },
+        {
+          groupName: "molecular machines",
+          logo: [
+            [1, 1, 1, 1, 1, 1, 1],
+            [1, 0, 0, 1, 0, 0, 1],
+            [1, 0, 0, 1, 0, 0, 1],
+            [0, 0, 0, 0, 0, 0, 0],
+            [1, 1, 1, 1, 1, 1, 1],
+            [1, 0, 0, 1, 0, 0, 1],
+            [1, 0, 0, 1, 0, 0, 1],
+          ],
+        },
+        {
+          groupName: "object-based media",
+          logo: [
+            [1, 1, 1, 0, 1, 0, 0],
+            [1, 0, 1, 0, 1, 1, 1],
+            [1, 0, 1, 0, 1, 0, 1],
+            [1, 1, 1, 0, 1, 1, 1],
+            [0, 0, 0, 0, 0, 0, 0],
+            [1, 1, 1, 1, 1, 1, 1],
+            [1, 0, 0, 1, 0, 0, 1],
+          ],
+        },
+        {
+          groupName: "opera of the future",
+          logo: [
+            [1, 1, 1, 1, 1, 1, 1],
+            [0, 0, 0, 0, 1, 0, 1],
+            [1, 1, 1, 0, 1, 0, 1],
+            [1, 0, 1, 0, 1, 0, 1],
+            [1, 0, 1, 0, 1, 0, 1],
+            [1, 0, 1, 0, 1, 0, 1],
+            [1, 1, 1, 0, 1, 0, 1],
+          ],
+        },
+        {
+          groupName: "personal robots",
+          logo: [
+            [1, 1, 1, 1, 1, 1, 1],
+            [1, 0, 0, 0, 0, 0, 1],
+            [1, 1, 1, 1, 1, 1, 1],
+            [1, 0, 0, 0, 0, 0, 0],
+            [1, 0, 1, 1, 0, 1, 1],
+            [1, 0, 1, 0, 1, 0, 0],
+            [1, 0, 1, 1, 1, 1, 1],
+          ],
+        },
+        {
+          groupName: "playful systems",
+          logo: [
+            [1, 1, 1, 0, 1, 1, 1],
+            [1, 0, 1, 0, 1, 0, 0],
+            [1, 0, 1, 0, 1, 1, 1],
+            [1, 0, 1, 0, 0, 0, 1],
+            [1, 0, 1, 0, 1, 1, 1],
+            [1, 0, 1, 0, 0, 0, 0],
+            [1, 1, 1, 1, 1, 1, 1],
+          ],
+        },
+      ];
 
-function saveInitialGrid() {
-  // Deep copy
-  initialGrid = grid.map(row => row.slice());
-}
+      // --- Layout constants ---
+      const LOGO_SIZE = 7; // 7x7
+      const GRID_ROWS = 5;
+      const GRID_COLS = 5;
+      const LOGO_POSITIONS = [
+        // 5x5 grid, star pattern, 17 logos
+        // Row 0: 0 1 2 3 4
+        { r: 0, c: 0 },
+        { r: 0, c: 1 },
+        { r: 0, c: 2 },
+        { r: 0, c: 3 },
+        { r: 0, c: 4 },
+        // Row 1: 0 4
+        { r: 1, c: 0 },
+        { r: 1, c: 4 },
+        // Row 2: 0 2 4
+        { r: 2, c: 0 },
+        { r: 2, c: 2 },
+        { r: 2, c: 4 },
+        // Row 3: 0 4
+        { r: 3, c: 0 },
+        { r: 3, c: 4 },
+        // Row 4: 0 1 2 3 4
+        { r: 4, c: 0 },
+        { r: 4, c: 1 },
+        { r: 4, c: 2 },
+        { r: 4, c: 3 },
+        { r: 4, c: 4 },
+      ];
+      // LOGO_POSITIONS.length === 17
 
-function restoreInitialGrid() {
-  grid = initialGrid.map(row => row.slice());
-}
+      // --- State ---
+      let gutter = 14; // default, in cells
+      let padding = 14; // always in cells
+      let cellSize = 1; // px, will be set dynamically
+      let gridW, gridH; // in cells
+      let grid, nextGrid, initialGrid;
+      let playing = false;
+      let playInterval = null;
+      let stepDelay = 180; // ms, default
 
-function drawGrid() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  // Draw cells
-  for (let y = 0; y < gridH; ++y) {
-    for (let x = 0; x < gridW; ++x) {
-      if (grid[y][x]) {
-        ctx.fillStyle = "#111";
-        ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
+      // --- DOM ---
+      const canvas = document.getElementById("life");
+      const ctx = canvas.getContext("2d");
+      const gutterInput = document.getElementById("gutter");
+      const speedInput = document.getElementById("speed");
+      const resetBtn = document.getElementById("reset");
+      const stepBtn = document.getElementById("step");
+      const playBtn = document.getElementById("play");
+      const container = document.getElementById("canvas-container");
+
+      // --- Functions ---
+
+      function computeGridSize() {
+        // The grid is: padding + (logo+gutter)*4 + logo + padding
+        // (5 logos per row/col, 4 gutters between them)
+        gridW = padding + (LOGO_SIZE + gutter) * (GRID_COLS - 1) + LOGO_SIZE + padding;
+        gridH = padding + (LOGO_SIZE + gutter) * (GRID_ROWS - 1) + LOGO_SIZE + padding;
       }
-    }
-  }
-  // Draw grid lines (light gray)
-  ctx.save();
-  ctx.strokeStyle = "#e0e0e0";
-  ctx.lineWidth = Math.max(1, cellSize * 0.08);
-  ctx.beginPath();
-  for (let x = 0; x <= gridW; ++x) {
-    ctx.moveTo(x * cellSize, 0);
-    ctx.lineTo(x * cellSize, gridH * cellSize);
-  }
-  for (let y = 0; y <= gridH; ++y) {
-    ctx.moveTo(0, y * cellSize);
-    ctx.lineTo(gridW * cellSize, y * cellSize);
-  }
-  ctx.stroke();
-  ctx.restore();
-}
 
-function countNeighbors(y, x) {
-  let n = 0;
-  for (let dy = -1; dy <= 1; ++dy) {
-    for (let dx = -1; dx <= 1; ++dx) {
-      if (dy === 0 && dx === 0) continue;
-      const ny = y + dy, nx = x + dx;
-      if (ny >= 0 && ny < gridH && nx >= 0 && nx < gridW) {
-        n += grid[ny][nx];
+      function fitCanvasToContainer() {
+        // Responsive: fit canvas to container, keep square cells
+        // Use devicePixelRatio for sharpness
+        const dpr = window.devicePixelRatio || 1;
+        // Container size
+        const w = container.clientWidth;
+        const h = container.clientHeight;
+        // Compute cell size to fit grid
+        cellSize = Math.floor(Math.min(w / gridW, h / gridH) * dpr);
+        // Set canvas size
+        canvas.width = gridW * cellSize;
+        canvas.height = gridH * cellSize;
+        canvas.style.width = (gridW * cellSize) / dpr + "px";
+        canvas.style.height = (gridH * cellSize) / dpr + "px";
       }
-    }
-  }
-  return n;
-}
 
-function stepLife() {
-  nextGrid = [];
-  for (let y = 0; y < gridH; ++y) {
-    nextGrid[y] = [];
-    for (let x = 0; x < gridW; ++x) {
-      const n = countNeighbors(y, x);
-      if (grid[y][x]) {
-        nextGrid[y][x] = (n === 2 || n === 3) ? 1 : 0;
-      } else {
-        nextGrid[y][x] = (n === 3) ? 1 : 0;
+      function clearGrid() {
+        grid = [];
+        for (let y = 0; y < gridH; ++y) {
+          grid[y] = [];
+          for (let x = 0; x < gridW; ++x) {
+            grid[y][x] = 0;
+          }
+        }
       }
-    }
-  }
-  grid = nextGrid;
-}
 
-function resetLife() {
-  computeGridSize();
-  fitCanvasToContainer();
-  clearGrid();
-  placeLogos();
-  saveInitialGrid();
-  drawGrid();
-}
+      function placeLogos() {
+        // Place each logo at its grid position
+        for (let i = 0; i < logos.length; ++i) {
+          const { logo } = logos[i];
+          const { r, c } = LOGO_POSITIONS[i];
+          // Compute top-left cell for this logo
+          const x0 = padding + c * (LOGO_SIZE + gutter);
+          const y0 = padding + r * (LOGO_SIZE + gutter);
+          for (let dy = 0; dy < LOGO_SIZE; ++dy) {
+            for (let dx = 0; dx < LOGO_SIZE; ++dx) {
+              if (logo[dy][dx]) {
+                grid[y0 + dy][x0 + dx] = 1;
+              }
+            }
+          }
+        }
+      }
 
-function stepAndDraw() {
-  stepLife();
-  drawGrid();
-}
+      function saveInitialGrid() {
+        // Deep copy
+        initialGrid = grid.map((row) => row.slice());
+      }
 
-function playLoop() {
-  if (!playing) return;
-  stepAndDraw();
-  playInterval = setTimeout(playLoop, stepDelay);
-}
+      function restoreInitialGrid() {
+        grid = initialGrid.map((row) => row.slice());
+      }
 
-function startPlay() {
-  if (!playing) {
-    playing = true;
-    playBtn.textContent = "Pause";
-    playLoop();
-  }
-}
+      function drawGrid() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        // Draw cells
+        for (let y = 0; y < gridH; ++y) {
+          for (let x = 0; x < gridW; ++x) {
+            if (grid[y][x]) {
+              ctx.fillStyle = "#111";
+              ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
+            }
+          }
+        }
+        // Draw grid lines (light gray)
+        ctx.save();
+        ctx.strokeStyle = "#e0e0e0";
+        ctx.lineWidth = Math.max(1, cellSize * 0.08);
+        ctx.beginPath();
+        for (let x = 0; x <= gridW; ++x) {
+          ctx.moveTo(x * cellSize, 0);
+          ctx.lineTo(x * cellSize, gridH * cellSize);
+        }
+        for (let y = 0; y <= gridH; ++y) {
+          ctx.moveTo(0, y * cellSize);
+          ctx.lineTo(gridW * cellSize, y * cellSize);
+        }
+        ctx.stroke();
+        ctx.restore();
+      }
 
-function stopPlay() {
-  playing = false;
-  playBtn.textContent = "Play";
-  if (playInterval) clearTimeout(playInterval);
-}
+      function countNeighbors(y, x) {
+        let n = 0;
+        for (let dy = -1; dy <= 1; ++dy) {
+          for (let dx = -1; dx <= 1; ++dx) {
+            if (dy === 0 && dx === 0) continue;
+            const ny = y + dy,
+              nx = x + dx;
+            if (ny >= 0 && ny < gridH && nx >= 0 && nx < gridW) {
+              n += grid[ny][nx];
+            }
+          }
+        }
+        return n;
+      }
 
-function togglePlay() {
-  if (playing) {
-    stopPlay();
-  } else {
-    startPlay();
-  }
-}
+      function stepLife() {
+        nextGrid = [];
+        for (let y = 0; y < gridH; ++y) {
+          nextGrid[y] = [];
+          for (let x = 0; x < gridW; ++x) {
+            const n = countNeighbors(y, x);
+            if (grid[y][x]) {
+              nextGrid[y][x] = n === 2 || n === 3 ? 1 : 0;
+            } else {
+              nextGrid[y][x] = n === 3 ? 1 : 0;
+            }
+          }
+        }
+        grid = nextGrid;
+      }
 
-function onResize() {
-  fitCanvasToContainer();
-  drawGrid();
-}
+      function resetLife() {
+        computeGridSize();
+        fitCanvasToContainer();
+        clearGrid();
+        placeLogos();
+        saveInitialGrid();
+        drawGrid();
+      }
 
-// --- Event Listeners ---
-gutterInput.addEventListener('input', e => {
-  let val = parseInt(gutterInput.value, 10);
-  if (isNaN(val) || val < 2) val = 2;
-  if (val > 40) val = 40;
-  gutterInput.value = val;
-  gutter = val;
-  // Don't reset immediately, only on "reset"
-});
+      function stepAndDraw() {
+        stepLife();
+        drawGrid();
+      }
 
-resetBtn.addEventListener('click', () => {
-  stopPlay();
-  gutter = parseInt(gutterInput.value, 10);
-  resetLife();
-});
+      function playLoop() {
+        if (!playing) return;
+        stepAndDraw();
+        playInterval = setTimeout(playLoop, stepDelay);
+      }
 
-stepBtn.addEventListener('click', () => {
-  stopPlay();
-  stepAndDraw();
-});
+      function startPlay() {
+        if (!playing) {
+          playing = true;
+          playBtn.textContent = "Pause";
+          playLoop();
+        }
+      }
 
-playBtn.addEventListener('click', togglePlay);
+      function stopPlay() {
+        playing = false;
+        playBtn.textContent = "Play";
+        if (playInterval) clearTimeout(playInterval);
+      }
 
-window.addEventListener('resize', onResize);
+      function togglePlay() {
+        if (playing) {
+          stopPlay();
+        } else {
+          startPlay();
+        }
+      }
 
-// --- Init ---
-function init() {
-  computeGridSize();
-  fitCanvasToContainer();
-  clearGrid();
-  placeLogos();
-  saveInitialGrid();
-  drawGrid();
-}
-init();
+      function onResize() {
+        fitCanvasToContainer();
+        drawGrid();
+      }
 
-</script>
-</body>
+      // --- Event Listeners ---
+      gutterInput.addEventListener("input", (e) => {
+        let val = parseInt(gutterInput.value, 10);
+        if (isNaN(val) || val < 2) val = 2;
+        if (val > 40) val = 40;
+        gutterInput.value = val;
+        gutter = val;
+        // Don't reset immediately, only on "reset"
+      });
+
+      speedInput.addEventListener("input", (e) => {
+        let val = parseInt(speedInput.value, 10);
+        if (isNaN(val) || val < 50) val = 50;
+        if (val > 1000) val = 1000;
+        speedInput.value = val;
+        stepDelay = val;
+        // If playing, restart the interval with the new speed
+        if (playing) {
+          stopPlay();
+          startPlay();
+        }
+      });
+
+      resetBtn.addEventListener("click", () => {
+        stopPlay();
+        gutter = parseInt(gutterInput.value, 10); // Use current input value on reset
+        resetLife();
+      });
+
+      stepBtn.addEventListener("click", () => {
+        stopPlay();
+        stepAndDraw();
+      });
+
+      playBtn.addEventListener("click", togglePlay);
+
+      window.addEventListener("resize", onResize);
+
+      // --- Init ---
+      function init() {
+        // Set initial speed from input
+        stepDelay = parseInt(speedInput.value, 10);
+        computeGridSize();
+        fitCanvasToContainer();
+        clearGrid();
+        placeLogos();
+        saveInitialGrid();
+        drawGrid();
+      }
+      init();
+    </script>
+  </body>
 </html>
