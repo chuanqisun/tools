@@ -1,3 +1,4 @@
-# vibe-tools
-Single-page HTML tools created by LLM
+# Tools
+
+Single purpose tools in a single HTML file
 
