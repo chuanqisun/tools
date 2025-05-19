@@ -1,4 +1,5 @@
 - [File to url](https://chuanqisun.github.io/fileurl/)
+- [Keyboard bounce tester](./keyboard-bounce-tester/)
 - [Markdown preview](./markdown-preview)
 - [Media Lab Game of Life](./media-lab-game-of-life)
 - [JSONL viewer](./jsonl-viewer)

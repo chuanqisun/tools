@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Keyboard Debouncer Tester</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      margin: 1em;
+    }
+    #controls {
+      margin-bottom: 0.5em;
+    }
+    #last-key {
+      font-weight: bold;
+      padding: 0 0.5em;
+      background: #eef;
+      border-radius: 4px;
+    }
+    #log {
+      white-space: pre-wrap;
+      border: 1px solid #ccc;
+      padding: 0.5em;
+      height: 200px;
+      overflow-y: auto;
+      background: #f9f9f9;
+    }
+    button {
+      margin-left: 0.5em;
+    }
+  </style>
+</head>
+<body>
+  <h1>Keyboard Debouncer Tester</h1>
+
+  <div id="controls">
+    Last pressed key:
+    <span id="last-key">—</span>
+    <button id="clear-btn">Clear Log</button>
+  </div>
+
+  <div id="log"></div>
+
+  <script>globalThis.readonlyFS = {
+  async getFile(filename) {
+    const script = document.querySelector(`script[type="embedded-file"][filename="${filename}"]`);
+    if (!script) {
+      throw new Error(`File not found: ${filename}`);
+    }
+    const data = script.getAttribute("data");
+    // fetch dataUrl into File object
+    const blob = await (await fetch(data)).blob();
+    const file = new File([blob], filename, { type: blob.type });
+    return file;
+  }
+}</script><script>
+  (function() {
+    const logEl     = document.getElementById('log');
+    const lastKeyEl = document.getElementById('last-key');
+    const clearBtn  = document.getElementById('clear-btn');
+
+    let lastKey     = null;
+    let repeatCount = 0;
+
+    // Append a timestamped message to the log
+    function appendLog(text) {
+      const time = new Date().toLocaleTimeString();
+      logEl.textContent += `[${time}] ${text}\n`;
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    // Clear the log area
+    clearBtn.addEventListener('click', () => {
+      logEl.textContent = '';
+    });
+
+    // Listen for all keydowns
+    window.addEventListener('keydown', (ev) => {
+      const k = ev.key;
+      // Update last-key display
+      lastKeyEl.textContent = k;
+
+      if (k === lastKey) {
+        // same key as before → bump repeat count
+        repeatCount++;
+        if (repeatCount === 2) {
+          // only log once per bounce-episode
+          appendLog(`Bounce detected: key "${k}" emitted ≥2× in a row`);
+        }
+      } else {
+        // brand-new key → reset counters
+        lastKey     = k;
+        repeatCount = 1;
+      }
+    });
+
+    // Initial message
+    appendLog('Waiting for key bounces…');
+  })();
+  </script>
+</body>
+</html>
