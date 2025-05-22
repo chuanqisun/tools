@@ -80,6 +80,19 @@
         box-sizing: border-box;
         background: #fff;
       }
+      .paste-indicator {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: rgba(45, 164, 78, 0.9);
+        color: white;
+        padding: 1em 2em;
+        border-radius: 8px;
+        font-weight: 500;
+        z-index: 1000;
+        display: none;
+      }
       @media (max-width: 900px) {
         .container {
           grid-template-columns: 1fr;
@@ -117,6 +130,7 @@ Paste your **Markdown** on the left.
 
 - See the preview on the right
 - Download as GitHub-styled HTML
+- Paste images directly - they'll be converted to base64!
 
 ---
 
@@ -127,19 +141,139 @@ Paste your **Markdown** on the left.
         <article class="markdown-body" id="preview"></article>
       </div>
     </div>
+    <div class="paste-indicator" id="pasteIndicator">Processing image...</div>
     <!-- Marked.js for Markdown parsing -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
     <script>
       const input = document.getElementById("markdownInput");
       const preview = document.getElementById("preview");
       const downloadBtn = document.getElementById("downloadBtn");
-      const downloadMdBtn = document.getElementById("downloadMdBtn"); // NEW
+      const downloadMdBtn = document.getElementById("downloadMdBtn");
+      const pasteIndicator = document.getElementById("pasteIndicator");
 
       function updatePreview() {
         const md = input.value;
         const html = marked.parse(md);
         preview.innerHTML = html;
       }
+
+      function showPasteIndicator(message = "Processing image...") {
+        pasteIndicator.textContent = message;
+        pasteIndicator.style.display = "block";
+      }
+
+      function hidePasteIndicator() {
+        pasteIndicator.style.display = "none";
+      }
+
+      function fileToBase64(file) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+      }
+
+      function isImageFile(file) {
+        return file.type.startsWith('image/');
+      }
+
+      function insertTextAtCursor(textarea, text) {
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        const before = textarea.value.substring(0, start);
+        const after = textarea.value.substring(end);
+        
+        textarea.value = before + text + after;
+        
+        // Set cursor position after inserted text
+        const newCursorPos = start + text.length;
+        textarea.setSelectionRange(newCursorPos, newCursorPos);
+        textarea.focus();
+      }
+
+      // Handle paste events
+      input.addEventListener("paste", async function(e) {
+        const items = Array.from(e.clipboardData.items);
+        const imageItems = items.filter(item => isImageFile(item.getAsFile()));
+        
+        if (imageItems.length > 0) {
+          e.preventDefault(); // Prevent default paste behavior for images
+          
+          showPasteIndicator();
+          
+          try {
+            for (const item of imageItems) {
+              const file = item.getAsFile();
+              const base64 = await fileToBase64(file);
+              
+              // Generate a filename based on current timestamp
+              const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+              const extension = file.name ? file.name.split('.').pop() : 'png';
+              const filename = `image-${timestamp}.${extension}`;
+              
+              // Create markdown image syntax with base64 data
+              const markdownImage = `![${filename}](${base64})\n\n`;
+              
+              // Insert at cursor position
+              insertTextAtCursor(input, markdownImage);
+            }
+            
+            // Update preview after all images are processed
+            updatePreview();
+            hidePasteIndicator();
+            
+          } catch (error) {
+            console.error('Error processing image:', error);
+            hidePasteIndicator();
+            alert('Error processing image. Please try again.');
+          }
+        }
+        // For non-image content, let the default paste behavior work
+      });
+
+      // Handle drag and drop
+      input.addEventListener("dragover", function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+      });
+
+      input.addEventListener("drop", async function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const files = Array.from(e.dataTransfer.files);
+        const imageFiles = files.filter(isImageFile);
+        
+        if (imageFiles.length > 0) {
+          showPasteIndicator(`Processing ${imageFiles.length} image(s)...`);
+          
+          try {
+            for (const file of imageFiles) {
+              const base64 = await fileToBase64(file);
+              
+              // Use original filename or generate one
+              const filename = file.name || `image-${Date.now()}.png`;
+              
+              // Create markdown image syntax with base64 data
+              const markdownImage = `![${filename}](${base64})\n\n`;
+              
+              // Insert at cursor position
+              insertTextAtCursor(input, markdownImage);
+            }
+            
+            // Update preview after all images are processed
+            updatePreview();
+            hidePasteIndicator();
+            
+          } catch (error) {
+            console.error('Error processing dropped image:', error);
+            hidePasteIndicator();
+            alert('Error processing dropped image. Please try again.');
+          }
+        }
+      });
 
       input.addEventListener("input", updatePreview);
 
@@ -195,7 +329,6 @@ Paste your **Markdown** on the left.
         URL.revokeObjectURL(url);
       });
 
-      // NEW: Download Markdown button handler
       downloadMdBtn.addEventListener("click", function () {
         const md = input.value;
         const blob = new Blob([md], { type: "text/markdown" });
