@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>JSON → TypeScript</title>
+    <style>
+      /* reset & layout */
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      html, body { height: 100%; width: 100%; overflow: hidden; font-family: sans-serif; }
+      body { display: flex; flex-direction: column; }
+
+      /* top toolbar */
+      #toolbar {
+        height: 40px;
+        background: #f5f5f5;
+        border-bottom: 1px solid #ddd;
+        display: flex;
+        align-items: center;
+        padding: 0 12px;
+      }
+      #toolbar-title {
+        flex: 1;
+        font-weight: bold;
+      }
+      #toolbar button {
+        margin-left: 8px;
+        padding: 6px 12px;
+        font-size: 14px;
+        cursor: pointer;
+      }
+
+      /* main panels */
+      #main {
+        flex: 1;
+        display: flex;
+        position: relative;
+      }
+      .panel {
+        flex: 1;
+        overflow: hidden;
+      }
+      #divider {
+        width: 4px;
+        cursor: col-resize;
+        background: #e0e0e0;
+      }
+      .cm-editor { height:100%; }
+    </style>
+  </head>
+  <body>
+    <div id="toolbar">
+      <div id="toolbar-title">JSON → TypeScript</div>
+      <button id="copyJsonBtn">Copy JSON</button>
+      <button id="copyTsBtn">Copy TypeScript</button>
+      <button id="exploreBtn">Explore API</button>
+    </div>
+
+    <div id="main">
+      <div id="left" class="panel"></div>
+      <div id="divider"></div>
+      <div id="right" class="panel"></div>
+    </div>
+
+    <script type="module">
+      import { getType } from "https://esm.sh/torex";
+      import { EditorState } from "https://esm.sh/@codemirror/state";
+      import { EditorView, keymap, highlightActiveLine, highlightActiveLineGutter, lineNumbers } from "https://esm.sh/@codemirror/view";
+      import { defaultHighlightStyle, syntaxHighlighting } from "https://esm.sh/@codemirror/language";
+      import { json } from "https://esm.sh/@codemirror/lang-json";
+      import { javascript } from "https://esm.sh/@codemirror/lang-javascript";
+      import { defaultKeymap } from "https://esm.sh/@codemirror/commands";
+      import { oneDark } from "https://esm.sh/@codemirror/theme-one-dark";
+
+      const commonExtensions = [
+        lineNumbers(),
+        highlightActiveLineGutter(),
+        highlightActiveLine(),
+        syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+        keymap.of(defaultKeymap),
+        oneDark,
+      ];
+
+      // Right TS editor
+      const rightView = new EditorView({
+        state: EditorState.create({
+          doc: "// TS interface will appear here",
+          extensions: [...commonExtensions, javascript()],
+        }),
+        parent: document.getElementById("right"),
+      });
+      function updateTs(code) {
+        const len = rightView.state.doc.length;
+        rightView.dispatch({ changes: { from: 0, to: len, insert: code } });
+      }
+
+      // Left JSON editor
+      const leftView = new EditorView({
+        state: EditorState.create({
+          doc: `{
+  "myKey": "myValue"
+}`,
+          extensions: [
+            ...commonExtensions,
+            json(),
+            EditorView.updateListener.of((v) => {
+              if (v.docChanged) processJson(v.state.doc.toString());
+            }),
+          ],
+        }),
+        parent: document.getElementById("left"),
+      });
+
+      // JSON → TS via torex
+      function processJson(txt) {
+        try {
+          const obj = JSON.parse(txt);
+          const ts = getType(obj, { rootName: "Root" });
+          updateTs(ts);
+        } catch (err) {
+          updateTs(`// Error: ${err.message}`);
+        }
+      }
+      processJson(leftView.state.doc.toString());
+
+      // Copy JSON
+      document.getElementById("copyJsonBtn").addEventListener("click", async () => {
+        const code = leftView.state.doc.toString();
+        try {
+          await navigator.clipboard.writeText(code);
+          alert("JSON copied to clipboard!");
+        } catch (e) {
+          alert("Copy JSON failed: " + e);
+        }
+      });
+
+      // Copy TS
+      document.getElementById("copyTsBtn").addEventListener("click", async () => {
+        const code = rightView.state.doc.toString();
+        try {
+          await navigator.clipboard.writeText(code);
+          alert("TypeScript copied to clipboard!");
+        } catch (e) {
+          alert("Copy TypeScript failed: " + e);
+        }
+      });
+
+      // Explore API → GitHub
+      document.getElementById("exploreBtn").addEventListener("click", () => {
+        window.open("https://github.com/chuanqisun/torex", "_blank");
+      });
+
+      // Drag‐to‐resize panels
+      const divider = document.getElementById("divider");
+      const leftPanel = document.getElementById("left");
+      const rightPanel = document.getElementById("right");
+      divider.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        const startX = e.clientX;
+        const startLeftW = leftPanel.getBoundingClientRect().width;
+        const totalW = divider.parentElement.getBoundingClientRect().width;
+        function onMouseMove(e) {
+          const dx = e.clientX - startX;
+          const newLeftW = startLeftW + dx;
+          const min = 100;
+          if (newLeftW < min || newLeftW > totalW - min) return;
+          leftPanel.style.flex = "none";
+          rightPanel.style.flex = "none";
+          leftPanel.style.width = newLeftW + "px";
+          rightPanel.style.width = totalW - newLeftW - divider.offsetWidth + "px";
+        }
+        function onMouseUp() {
+          window.removeEventListener("mousemove", onMouseMove);
+          window.removeEventListener("mouseup", onMouseUp);
+        }
+        window.addEventListener("mousemove", onMouseMove);
+        window.addEventListener("mouseup", onMouseUp);
+      });
+    </script>
+  </body>
+</html>
