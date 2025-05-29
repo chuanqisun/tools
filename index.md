@@ -1,3 +1,4 @@
+[Add](https://github.dev/chuanqisun/tools) · [Repo](https://github.com/chuanqisun/tools/)
 - [File → URL](https://chuanqisun.github.io/fileurl/)
 - [Keyboard bounce tester](./keyboard-bounce-tester/)
 - [Markdown preview](./markdown-preview)
