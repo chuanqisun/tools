@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Text → SVG Stroke Centre‑Line Skeleton (upload TTF)</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: sans-serif;
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+      }
+      #controls {
+        padding: 0.5em;
+        background: #222;
+        color: #fff;
+        text-align: center;
+      }
+      #controls input {
+        margin-left: 0.5em;
+      }
+      #status {
+        display: block;
+        margin-top: 0.3em;
+        font-size: 0.9em;
+        color: #ffdd57;
+      }
+      #svg-container {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #fafafa;
+      }
+      svg {
+        image-rendering: crisp-edges;
+        background: #fff;
+        border: 1px solid #ccc;
+      }
+    </style>
+    <!-- opentype.js from CDN -->
+    <script>
+      globalThis.readonlyFS = {
+        async getFile(filename) {
+          const script = document.querySelector(`script[type="embedded-file"][filename="${filename}"]`);
+          if (!script) {
+            throw new Error(`File not found: ${filename}`);
+          }
+          const data = script.getAttribute("data");
+          // fetch dataUrl into File object
+          const blob = await (await fetch(data)).blob();
+          const file = new File([blob], filename, { type: blob.type });
+          return file;
+        },
+      };
+
+      globalThis.writeonlyFS = {
+        async writeFile(filename, text) {
+          const blob = new Blob([text], { type: "text/plain" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        },
+      };
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/opentype.js@1.3.4/dist/opentype.min.js"></script>
+  </head>
+  <body>
+    <div id="controls">
+      <label>
+        Upload a TTF font:
+        <input type="file" id="font-file" accept=".ttf,font/ttf" />
+      </label>
+      <span id="status">Awaiting font upload…</span>
+    </div>
+    <div id="svg-container">
+      <svg id="svg" width="500" height="200"></svg>
+    </div>
+
+    <script>
+      const statusEl = document.getElementById("status");
+      const svgEl = document.getElementById("svg");
+      const fileInput = document.getElementById("font-file");
+      let font = null;
+
+      //
+      // 1) Handle font‑file upload and parsing
+      //
+      fileInput.addEventListener("change", async () => {
+        const file = fileInput.files[0];
+        if (!file) return;
+        statusEl.textContent = "Loading font…";
+
+        try {
+          const buffer = await file.arrayBuffer();
+          font = opentype.parse(buffer);
+          statusEl.textContent = "Font loaded: " + font.familyName;
+        } catch (err) {
+          console.error("Font load error:", err);
+          statusEl.textContent = "⚠️ Failed to parse font.";
+          font = null;
+        }
+      });
+
+      //
+      // 2) Zhang–Suen thinning implementation
+      //
+      function thinningZS(binary, w, h) {
+        const idx = (x, y) => y * w + x;
+        const get = (x, y) => binary[idx(x, y)];
+        const set0 = (x, y) => {
+          binary[idx(x, y)] = 0;
+        };
+        const neighbours = (x, y) => [
+          get(x, y - 1), // p2
+          get(x + 1, y - 1), // p3
+          get(x + 1, y), // p4
+          get(x + 1, y + 1), // p5
+          get(x, y + 1), // p6
+          get(x - 1, y + 1), // p7
+          get(x - 1, y), // p8
+          get(x - 1, y - 1), // p9
+        ];
+        const sum = (arr) => arr.reduce((a, b) => a + b, 0);
+        const transitions = (arr) => {
+          let c = 0;
+          for (let i = 0; i < 8; i++) {
+            if (arr[i] === 0 && arr[(i + 1) % 8] === 1) c++;
+          }
+          return c;
+        };
+
+        let changed;
+        do {
+          changed = false;
+          let toDel = [];
+
+          // Sub-iteration 1
+          for (let y = 1; y < h - 1; y++) {
+            for (let x = 1; x < w - 1; x++) {
+              if (get(x, y) !== 1) continue;
+              const nb = neighbours(x, y);
+              const A = transitions(nb);
+              const B = sum(nb);
+              if (B < 2 || B > 6) continue;
+              if (A !== 1) continue;
+              if (nb[0] * nb[2] * nb[4] !== 0) continue;
+              if (nb[2] * nb[4] * nb[6] !== 0) continue;
+              toDel.push([x, y]);
+            }
+          }
+          if (toDel.length) {
+            toDel.forEach(([x, y]) => set0(x, y));
+            changed = true;
+          }
+
+          // Sub-iteration 2
+          toDel = [];
+          for (let y = 1; y < h - 1; y++) {
+            for (let x = 1; x < w - 1; x++) {
+              if (get(x, y) !== 1) continue;
+              const nb = neighbours(x, y);
+              const A = transitions(nb);
+              const B = sum(nb);
+              if (B < 2 || B > 6) continue;
+              if (A !== 1) continue;
+              if (nb[0] * nb[2] * nb[6] !== 0) continue;
+              if (nb[0] * nb[4] * nb[6] !== 0) continue;
+              toDel.push([x, y]);
+            }
+          }
+          if (toDel.length) {
+            toDel.forEach(([x, y]) => set0(x, y));
+            changed = true;
+          }
+        } while (changed);
+
+        return binary;
+      }
+
+      //
+      // 3) Keydown → rasterize, skeletonize & emit SVG
+      //
+      window.addEventListener("keydown", (evt) => {
+        if (!font) return; // must have uploaded font first
+        const ch = evt.key;
+        if (ch.length !== 1) return; // skip non-printable keys
+
+        // clear previous drawing
+        svgEl.innerHTML = "";
+
+        // prepare off-screen canvas same size as SVG
+        const W = svgEl.clientWidth | 0;
+        const H = svgEl.clientHeight | 0;
+        const canvas = document.createElement("canvas");
+        canvas.width = W;
+        canvas.height = H;
+        const ctx = canvas.getContext("2d");
+
+        // draw white background + black glyph
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(0, 0, W, H);
+        const fontSize = 150;
+        const x = 20,
+          y = 150;
+        const path = font.getPath(ch, x, y, fontSize);
+        ctx.fillStyle = "#000";
+        ctx.fill(new Path2D(path.toPathData()));
+
+        // extract bitmap & binarize
+        const img = ctx.getImageData(0, 0, W, H).data;
+        const binary = new Uint8Array(W * H);
+        for (let i = 0, p = 0; i < img.length; i += 4, p++) {
+          binary[p] = img[i] < 128 ? 1 : 0;
+        }
+
+        // thin to centre-line
+        thinningZS(binary, W, H);
+
+        // emit each pixel as 1×1 <rect> in SVG
+        const ns = "http://www.w3.org/2000/svg";
+        for (let yy = 0; yy < H; yy++) {
+          for (let xx = 0; xx < W; xx++) {
+            if (binary[yy * W + xx]) {
+              const r = document.createElementNS(ns, "rect");
+              r.setAttribute("x", xx);
+              r.setAttribute("y", yy);
+              r.setAttribute("width", 1);
+              r.setAttribute("height", 1);
+              r.setAttribute("fill", "black");
+              svgEl.appendChild(r);
+            }
+          }
+        }
+      });
+    </script>
+  </body>
+</html>
