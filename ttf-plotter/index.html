@@ -137,10 +137,9 @@
             for (let x = 1; x < w - 1; x++) {
               if (get(x, y) !== 1) continue;
               const nb = neighbours(x, y);
-              const A = transitions(nb);
-              const B = sum(nb);
-              if (B < 2 || B > 6) continue;
-              if (A !== 1) continue;
+              const A = transitions(nb),
+                B = sum(nb);
+              if (B < 2 || B > 6 || A !== 1) continue;
               if (nb[0] * nb[2] * nb[4] !== 0) continue;
               if (nb[2] * nb[4] * nb[6] !== 0) continue;
               toDel.push([x, y]);
@@ -157,10 +156,9 @@
             for (let x = 1; x < w - 1; x++) {
               if (get(x, y) !== 1) continue;
               const nb = neighbours(x, y);
-              const A = transitions(nb);
-              const B = sum(nb);
-              if (B < 2 || B > 6) continue;
-              if (A !== 1) continue;
+              const A = transitions(nb),
+                B = sum(nb);
+              if (B < 2 || B > 6 || A !== 1) continue;
               if (nb[0] * nb[2] * nb[6] !== 0) continue;
               if (nb[0] * nb[4] * nb[6] !== 0) continue;
               toDel.push([x, y]);
@@ -176,7 +174,7 @@
       }
 
       //
-      // 3) Keydown → rasterize, skeletonize & emit SVG
+      // 3) Keydown → rasterize, skeletonize & emit SVG lines
       //
       window.addEventListener("keydown", (evt) => {
         if (!font) return; // must have a loaded font first
@@ -211,22 +209,36 @@
           binary[p] = img[i] < 128 ? 1 : 0;
         }
 
-        // thin to centre‐line
+        // thin to centre‑line
         thinningZS(binary, W, H);
 
-        // emit each pixel as 1×1 <rect>
+        // emit each pixel‑neighbour connection as an SVG <line>
         const ns = "http://www.w3.org/2000/svg";
-        for (let yy = 0; yy < H; yy++) {
-          for (let xx = 0; xx < W; xx++) {
-            if (binary[yy * W + xx]) {
-              const r = document.createElementNS(ns, "rect");
-              r.setAttribute("x", xx);
-              r.setAttribute("y", yy);
-              r.setAttribute("width", 1);
-              r.setAttribute("height", 1);
-              r.setAttribute("fill", "black");
-              svgEl.appendChild(r);
-            }
+        // only connect to “forward” neighbours to avoid duplicates:
+        const DELTAS = [
+          [1, 0],
+          [0, 1],
+          [1, 1],
+          [1, -1],
+        ];
+        for (let y0 = 0; y0 < H; y0++) {
+          for (let x0 = 0; x0 < W; x0++) {
+            if (!binary[y0 * W + x0]) continue;
+            DELTAS.forEach(([dx, dy]) => {
+              const x1 = x0 + dx,
+                y1 = y0 + dy;
+              if (x1 >= 0 && x1 < W && y1 >= 0 && y1 < H && binary[y1 * W + x1]) {
+                const line = document.createElementNS(ns, "line");
+                line.setAttribute("x1", x0 + 0.5);
+                line.setAttribute("y1", y0 + 0.5);
+                line.setAttribute("x2", x1 + 0.5);
+                line.setAttribute("y2", y1 + 0.5);
+                line.setAttribute("stroke", "black");
+                line.setAttribute("stroke-width", "1");
+                line.setAttribute("stroke-linecap", "round");
+                svgEl.appendChild(line);
+              }
+            });
           }
         }
       });
