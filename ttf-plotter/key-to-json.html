@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Hershey → JSON &amp; 50×100 SVG</title>
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0 }
+      body {
+        font-family: sans-serif;
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+      }
+      header {
+        background: #222;
+        color: #fff;
+        padding: 1rem;
+        text-align: center;
+      }
+      main {
+        flex: 1;
+        display: flex;
+        overflow: hidden;
+      }
+      /* JSON panel */
+      #jsonPanel {
+        width: 50%;
+        padding: 1rem;
+        background: #f5f5f5;
+        overflow: auto;
+        border-right: 1px solid #ccc;
+      }
+      #jsonPanel pre {
+        font-family: monospace;
+        font-size: 0.9rem;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+      }
+      /* SVG panel */
+      #svgPanel {
+        width: 50%;
+        position: relative;
+        background: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      #svgPanel svg {
+        /* force the viewport to be exactly 50×100 CSS px */
+        width: 50px;
+        height: 100px;
+        /* center & preserve aspect ratio (just in case) */
+        preserveAspectRatio: xMidYMid meet;
+        border: 1px solid #ccc;
+        background: #fafafa;
+      }
+      #instructions {
+        position: absolute;
+        top: 1rem;
+        left: 1rem;
+        background: rgba(255,255,255,0.8);
+        padding: 0.5rem 1rem;
+        border-radius: 4px;
+        font-size: 0.9rem;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Hershey Font → JSON &amp; 50×100 SVG</h1>
+      <p>Press any supported character key to see its vector data.</p>
+    </header>
+
+    <main>
+      <!-- JSON output -->
+      <section id="jsonPanel">
+        <pre id="output">Press a key…</pre>
+      </section>
+
+      <!-- SVG rendering -->
+      <section id="svgPanel">
+        <div id="instructions">Press a key…</div>
+        <svg id="displaySvg" xmlns="http://www.w3.org/2000/svg"></svg>
+      </section>
+    </main>
+
+    <script type="module">
+      import hershey from "https://esm.sh/hershey";
+
+      const output = document.getElementById("output");
+      const svgEl = document.getElementById("displaySvg");
+      const instruct = document.getElementById("instructions");
+
+      // Desired fixed “canvas” size:
+      const SVG_VIEWPORT_W = 50;
+      const SVG_VIEWPORT_H = 100;
+
+      // Apply fixed CSS‐px dimensions and ensure aspect‐ratio is preserved/centered
+      svgEl.setAttribute("width", SVG_VIEWPORT_W);
+      svgEl.setAttribute("height", SVG_VIEWPORT_H);
+      svgEl.setAttribute("preserveAspectRatio", "xMidYMid meet");
+
+      document.addEventListener("keydown", (ev) => {
+        const char = ev.key.length === 1 ? ev.key : "";
+        if (!char) return;
+
+        // 1) Get the Hershey JSON data for this character
+        const { bounds, paths } = hershey.stringToPaths(char);
+        output.textContent = JSON.stringify({ bounds, paths }, null, 2);
+
+        // 2) Compute how to center the glyph in a 50×100 box
+        const { minX, minY, maxX, maxY } = bounds;
+        const glyphW = maxX - minX;
+        const glyphH = maxY - minY;
+
+        // Compute extra margin needed on each side to center
+        const marginX = (SVG_VIEWPORT_W - glyphW) / 2;
+        const marginY = (SVG_VIEWPORT_H - glyphH) / 2;
+
+        // Because SVG Y axis points down but Hershey Y axis points up,
+        // we flip Y by negating coordinates and shifting viewBox Y origin.
+        //
+        // viewBox x = minX − marginX
+        // viewBox y = −(maxY + marginY)
+        // viewBox width/height = 50×100 fixed
+        const vbX = minX - marginX;
+        const vbY = -(maxY + marginY);
+        const vbW = SVG_VIEWPORT_W;
+        const vbH = SVG_VIEWPORT_H;
+
+        // Build the single <path> d‑string
+        const d = paths
+          .map((stroke) => {
+            return "M " + stroke.map(([x, y]) => `${x} ${-y}`).join(" L ");
+          })
+          .join(" ");
+
+        // Inject into the SVG
+        svgEl.setAttribute("viewBox", `${vbX} ${vbY} ${vbW} ${vbH}`);
+        svgEl.innerHTML = `
+        <path d="${d}"
+              stroke="#000"
+              stroke-width="1"
+              fill="none"
+              stroke-linecap="round"
+              stroke-linejoin="round"/>
+      `;
+        instruct.style.display = "none";
+      });
+    </script>
+  </body>
+</html>
