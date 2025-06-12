@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>GitHub Markdown Preview Tool</title>
+    <title>GitHub Markdown Preview Tool with Shiki</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <!-- GitHub Markdown CSS -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.8.1/github-markdown-light.min.css" />
@@ -59,7 +59,7 @@
         width: 100%;
         height: 100%;
         font-size: 1em;
-        font-family: 'Fira Mono', 'Consolas', 'Menlo', monospace;
+        font-family: "Fira Mono", "Consolas", "Menlo", monospace;
         padding: 2em;
         box-sizing: border-box;
         background: #fff;
@@ -79,7 +79,16 @@
         padding: 2em;
         box-sizing: border-box;
         background: #fff;
+
+        pre {
+          border-radius: 6px;
+
+          code {
+            white-space: pre-wrap; /* Prevents horizontal overflow */
+          }
+        }
       }
+
       .paste-indicator {
         position: fixed;
         top: 50%;
@@ -98,7 +107,8 @@
           grid-template-columns: 1fr;
           grid-template-rows: 1fr 1fr;
         }
-        .markdown-input, .preview-pane {
+        .markdown-input,
+        .preview-pane {
           height: 50vh;
           border-right: none;
           border-bottom: 1px solid #d0d7de;
@@ -108,7 +118,8 @@
         }
       }
       @media (max-width: 600px) {
-        .markdown-body, .markdown-input {
+        .markdown-body,
+        .markdown-input {
           padding: 1em;
         }
       }
@@ -116,7 +127,7 @@
   </head>
   <body>
     <header>
-      <h1>GitHub Markdown Preview Tool</h1>
+      <h1>GitHub Markdown Preview Tool with Shiki</h1>
       <div class="header-buttons">
         <button id="downloadMdBtn">Download Markdown</button>
         <button id="downloadBtn">Download HTML</button>
@@ -134,7 +145,7 @@ Paste your **Markdown** on the left.
 
 ---
 
-> Built with vanilla JS.
+> Built with vanilla JS + Shiki.
 </textarea
       >
       <div class="preview-pane">
@@ -142,23 +153,109 @@ Paste your **Markdown** on the left.
       </div>
     </div>
     <div class="paste-indicator" id="pasteIndicator">Processing image...</div>
-    <!-- Marked.js for Markdown parsing -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
-    <script>
+
+    <!-- Module script: Marked + Shiki integration -->
+    <script type="module">
+      import { Marked } from "https://esm.sh/marked@15.0.12";
+      import markedShiki from "https://esm.sh/marked-shiki@1.2.0";
+      import { bundledLanguages } from "https://esm.sh/shiki@3.6.0/bundle/full";
+      import { createHighlighter } from "https://esm.sh/shiki@3.6.0";
+
+      /**
+       * Wraps marked.parse() and integrates Shiki for syntax highlighting.
+       */
+      class MarkdownParser {
+        constructor() {
+          this.marked = null;
+          this.initPromise = this.initialize();
+        }
+
+        async initialize() {
+          const supportedLanguages = Object.keys(bundledLanguages);
+          const highlighterMap = new Map();
+          const highlighterPromises = new Map(); // To handle concurrent requests for the same language
+
+          const getHighlighter = async (lang) => {
+            // Return cached highlighter if it exists
+            if (highlighterMap.has(lang)) {
+              return highlighterMap.get(lang);
+            }
+
+            // If there's already a promise for this language, return it to avoid duplicate creation
+            if (highlighterPromises.has(lang)) {
+              return await highlighterPromises.get(lang);
+            }
+
+            // Create new highlighter for this language
+            const promise = createHighlighter({
+              langs: [lang],
+              themes: ["dark-plus"],
+            });
+
+            highlighterPromises.set(lang, promise);
+
+            try {
+              const highlighter = await promise;
+              highlighterMap.set(lang, highlighter);
+              highlighterPromises.delete(lang); // Clean up the promise
+              return highlighter;
+            } catch (error) {
+              highlighterPromises.delete(lang); // Clean up on error
+              throw error;
+            }
+          };
+
+          this.marked = new Marked().use(
+            markedShiki({
+              async highlight(code, lang) {
+                const highlightLang = supportedLanguages.includes(lang) ? lang : "text";
+                const highlighter = await getHighlighter(highlightLang);
+                return highlighter.codeToHtml(code, {
+                  lang: highlightLang,
+                  theme: "dark-plus",
+                });
+              },
+            })
+          );
+        }
+
+        /**
+         * Parse markdown → HTML + detect if there's an unclosed code fence.
+         */
+        async parse(markdown) {
+          await this.initPromise;
+          if (!this.marked) throw new Error("Markdown parser not initialized");
+          const html = await this.marked.parse(markdown);
+          const fences = (markdown.match(/```/g) || []).length;
+          const isComplete = fences % 2 === 0;
+          return { html, isComplete };
+        }
+      }
+
+      // DOM references
       const input = document.getElementById("markdownInput");
       const preview = document.getElementById("preview");
       const downloadBtn = document.getElementById("downloadBtn");
       const downloadMdBtn = document.getElementById("downloadMdBtn");
       const pasteIndicator = document.getElementById("pasteIndicator");
 
-      function updatePreview() {
+      // Instantiate our parser
+      const parser = new MarkdownParser();
+      let parserReady = false;
+      parser.initPromise.then(() => {
+        parserReady = true;
+        updatePreview();
+      });
+
+      async function updatePreview() {
+        if (!parserReady) return;
         const md = input.value;
-        const html = marked.parse(md);
+        const { html } = await parser.parse(md);
         preview.innerHTML = html;
       }
 
-      function showPasteIndicator(message = "Processing image...") {
-        pasteIndicator.textContent = message;
+      function showPasteIndicator(text = "Processing image...") {
+        pasteIndicator.textContent = text;
         pasteIndicator.style.display = "block";
       }
 
@@ -167,125 +264,91 @@ Paste your **Markdown** on the left.
       }
 
       function fileToBase64(file) {
-        return new Promise((resolve, reject) => {
+        return new Promise((res, rej) => {
           const reader = new FileReader();
-          reader.onload = () => resolve(reader.result);
-          reader.onerror = reject;
+          reader.onload = () => res(reader.result);
+          reader.onerror = rej;
           reader.readAsDataURL(file);
         });
       }
 
       function isImageFile(file) {
-        return file.type.startsWith('image/');
+        return file && file.type.startsWith("image/");
       }
 
       function insertTextAtCursor(textarea, text) {
         const start = textarea.selectionStart;
         const end = textarea.selectionEnd;
-        const before = textarea.value.substring(0, start);
-        const after = textarea.value.substring(end);
-        
+        const before = textarea.value.slice(0, start);
+        const after = textarea.value.slice(end);
         textarea.value = before + text + after;
-        
-        // Set cursor position after inserted text
-        const newCursorPos = start + text.length;
-        textarea.setSelectionRange(newCursorPos, newCursorPos);
+        const newPos = start + text.length;
+        textarea.setSelectionRange(newPos, newPos);
         textarea.focus();
       }
 
-      // Handle paste events
-      input.addEventListener("paste", async function(e) {
-        const items = Array.from(e.clipboardData.items);
-        const imageItems = items.filter(item => isImageFile(item.getAsFile()));
-        
-        if (imageItems.length > 0) {
-          e.preventDefault(); // Prevent default paste behavior for images
-          
-          showPasteIndicator();
-          
-          try {
-            for (const item of imageItems) {
-              const file = item.getAsFile();
-              const base64 = await fileToBase64(file);
-              
-              // Generate a filename based on current timestamp
-              const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-              const extension = file.name ? file.name.split('.').pop() : 'png';
-              const filename = `image-${timestamp}.${extension}`;
-              
-              // Create markdown image syntax with base64 data
-              const markdownImage = `![${filename}](${base64})\n\n`;
-              
-              // Insert at cursor position
-              insertTextAtCursor(input, markdownImage);
-            }
-            
-            // Update preview after all images are processed
-            updatePreview();
-            hidePasteIndicator();
-            
-          } catch (error) {
-            console.error('Error processing image:', error);
-            hidePasteIndicator();
-            alert('Error processing image. Please try again.');
-          }
-        }
-        // For non-image content, let the default paste behavior work
-      });
-
-      // Handle drag and drop
-      input.addEventListener("dragover", function(e) {
+      // Paste handler (for images → base64)
+      input.addEventListener("paste", async (e) => {
+        const items = Array.from(e.clipboardData.items || []);
+        const imageItems = items.filter((it) => isImageFile(it.getAsFile()));
+        if (imageItems.length === 0) return;
         e.preventDefault();
-        e.stopPropagation();
-      });
+        showPasteIndicator();
 
-      input.addEventListener("drop", async function(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        
-        const files = Array.from(e.dataTransfer.files);
-        const imageFiles = files.filter(isImageFile);
-        
-        if (imageFiles.length > 0) {
-          showPasteIndicator(`Processing ${imageFiles.length} image(s)...`);
-          
-          try {
-            for (const file of imageFiles) {
-              const base64 = await fileToBase64(file);
-              
-              // Use original filename or generate one
-              const filename = file.name || `image-${Date.now()}.png`;
-              
-              // Create markdown image syntax with base64 data
-              const markdownImage = `![${filename}](${base64})\n\n`;
-              
-              // Insert at cursor position
-              insertTextAtCursor(input, markdownImage);
-            }
-            
-            // Update preview after all images are processed
-            updatePreview();
-            hidePasteIndicator();
-            
-          } catch (error) {
-            console.error('Error processing dropped image:', error);
-            hidePasteIndicator();
-            alert('Error processing dropped image. Please try again.');
+        try {
+          for (const item of imageItems) {
+            const file = item.getAsFile();
+            const base64 = await fileToBase64(file);
+            const ts = new Date().toISOString().replace(/[:.]/g, "-");
+            const ext = (file.name && file.name.split(".").pop()) || "png";
+            const name = `image-${ts}.${ext}`;
+            const mdImg = `![${name}](${base64})\n\n`;
+            insertTextAtCursor(input, mdImg);
           }
+          await updatePreview();
+        } catch (err) {
+          console.error("Image paste error", err);
+          alert("Error processing image.");
+        } finally {
+          hidePasteIndicator();
         }
       });
 
+      // Drag & drop handler
+      input.addEventListener("dragover", (e) => {
+        e.preventDefault();
+      });
+      input.addEventListener("drop", async (e) => {
+        e.preventDefault();
+        const files = Array.from(e.dataTransfer.files || []);
+        const images = files.filter(isImageFile);
+        if (!images.length) return;
+        showPasteIndicator(`Processing ${images.length} image(s)...`);
+
+        try {
+          for (const file of images) {
+            const base64 = await fileToBase64(file);
+            const name = file.name || `image-${Date.now()}.png`;
+            const mdImg = `![${name}](${base64})\n\n`;
+            insertTextAtCursor(input, mdImg);
+          }
+          await updatePreview();
+        } catch (err) {
+          console.error("Drop error", err);
+          alert("Error processing dropped image.");
+        } finally {
+          hidePasteIndicator();
+        }
+      });
+
+      // Text input → live preview
       input.addEventListener("input", updatePreview);
 
-      // Initial render
-      updatePreview();
-
-      downloadBtn.addEventListener("click", function () {
+      // Downloads
+      downloadBtn.addEventListener("click", () => {
         const md = input.value;
-        const htmlContent = marked.parse(md);
-
-        // HTML template with GitHub markdown CSS
-        const html = `<!DOCTYPE html>
+        const htmlContent = preview.innerHTML;
+        const full = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -293,53 +356,38 @@ Paste your **Markdown** on the left.
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.8.1/github-markdown-light.min.css">
   <style>
-    .markdown-body {
-      box-sizing: border-box;
-      min-width: 200px;
-      max-width: 980px;
-      margin: 0 auto;
-      padding: 45px;
-    }
-    @media (max-width: 767px) {
-      .markdown-body {
-        padding: 15px;
-      }
-    }
-    body {
-      background: #f6f8fa;
-    }
+    .markdown-body { box-sizing: border-box; min-width:200px; max-width:980px; margin:0 auto; padding:45px; }
+    @media(max-width:767px){ .markdown-body{padding:15px;} }
+    body{background:#f6f8fa;}
+    .markdown-body pre{overflow-x:auto;border-radius:6px;}
   </style>
 </head>
 <body>
   <article class="markdown-body">
-    ${htmlContent}
+${htmlContent}
   </article>
 </body>
-</html>`;
-
-        const blob = new Blob([html], { type: "text/html" });
+</html>`.trim();
+        const blob = new Blob([full], { type: "text/html" });
         const url = URL.createObjectURL(blob);
-
         const a = document.createElement("a");
         a.href = url;
         a.download = "markdown-preview.html";
         document.body.appendChild(a);
         a.click();
-        document.body.removeChild(a);
+        a.remove();
         URL.revokeObjectURL(url);
       });
 
-      downloadMdBtn.addEventListener("click", function () {
-        const md = input.value;
-        const blob = new Blob([md], { type: "text/markdown" });
+      downloadMdBtn.addEventListener("click", () => {
+        const blob = new Blob([input.value], { type: "text/markdown" });
         const url = URL.createObjectURL(blob);
-
         const a = document.createElement("a");
         a.href = url;
         a.download = "markdown.md";
         document.body.appendChild(a);
         a.click();
-        document.body.removeChild(a);
+        a.remove();
         URL.revokeObjectURL(url);
       });
     </script>
