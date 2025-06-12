@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>3D Letter Intersection Visualization</title>
+    <style>
+      body { margin: 0; background: #222; color: #fff; font-family: sans-serif; }
+      #ui {
+        position: absolute; top: 10px; left: 10px; z-index: 10;
+        background: rgba(0,0,0,0.7); padding: 10px; border-radius: 8px;
+      }
+      label { margin-right: 10px; }
+      select { font-size: 1.1em; }
+    </style>
+  </head>
+  <body>
+    <div id="ui">
+      <label for="letter1">Front Letter:</label>
+      <select id="letter1"></select>
+      <label for="letter2">Side Letter:</label>
+      <select id="letter2"></select>
+    </div>
+    <script type="module">
+      import * as THREE from "https://esm.sh/three";
+      import { OrbitControls } from "https://esm.sh/three/examples/jsm/controls/OrbitControls.js";
+
+      // 7x7 bitmaps for A-E (1=filled, 0=empty)
+      const LETTERS = {
+        A: [
+          [0, 1, 1, 1, 1, 1, 0],
+          [1, 0, 0, 0, 0, 0, 1],
+          [1, 0, 0, 0, 0, 0, 1],
+          [1, 1, 1, 1, 1, 1, 1],
+          [1, 0, 0, 0, 0, 0, 1],
+          [1, 0, 0, 0, 0, 0, 1],
+          [1, 0, 0, 0, 0, 0, 1],
+        ],
+        B: [
+          [1, 1, 1, 1, 1, 1, 0],
+          [1, 0, 0, 0, 0, 0, 1],
+          [1, 0, 0, 0, 0, 0, 1],
+          [1, 1, 1, 1, 1, 1, 0],
+          [1, 0, 0, 0, 0, 0, 1],
+          [1, 0, 0, 0, 0, 0, 1],
+          [1, 1, 1, 1, 1, 1, 0],
+        ],
+        C: [
+          [0, 1, 1, 1, 1, 1, 1],
+          [1, 0, 0, 0, 0, 0, 0],
+          [1, 0, 0, 0, 0, 0, 0],
+          [1, 0, 0, 0, 0, 0, 0],
+          [1, 0, 0, 0, 0, 0, 0],
+          [1, 0, 0, 0, 0, 0, 0],
+          [0, 1, 1, 1, 1, 1, 1],
+        ],
+        D: [
+          [1, 1, 1, 1, 1, 1, 0],
+          [1, 0, 0, 0, 0, 0, 1],
+          [1, 0, 0, 0, 0, 0, 1],
+          [1, 0, 0, 0, 0, 0, 1],
+          [1, 0, 0, 0, 0, 0, 1],
+          [1, 0, 0, 0, 0, 0, 1],
+          [1, 1, 1, 1, 1, 1, 0],
+        ],
+        E: [
+          [1, 1, 1, 1, 1, 1, 1],
+          [1, 0, 0, 0, 0, 0, 0],
+          [1, 0, 0, 0, 0, 0, 0],
+          [1, 1, 1, 1, 1, 1, 0],
+          [1, 0, 0, 0, 0, 0, 0],
+          [1, 0, 0, 0, 0, 0, 0],
+          [1, 1, 1, 1, 1, 1, 1],
+        ],
+      };
+
+      // UI setup
+      const letterKeys = Object.keys(LETTERS);
+      const sel1 = document.getElementById("letter1");
+      const sel2 = document.getElementById("letter2");
+      for (const k of letterKeys) {
+        sel1.appendChild(new Option(k, k));
+        sel2.appendChild(new Option(k, k));
+      }
+      sel1.value = "A";
+      sel2.value = "B";
+
+      // Three.js setup
+      const scene = new THREE.Scene();
+      const renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setClearColor(0x222222);
+      document.body.appendChild(renderer.domElement);
+
+      // Orthographic camera
+      const aspect = window.innerWidth / window.innerHeight;
+      const frustumSize = 14; // 7x7 grid, so double for margin
+      let camera = new THREE.OrthographicCamera((frustumSize * aspect) / -2, (frustumSize * aspect) / 2, frustumSize / 2, frustumSize / -2, 0.1, 100);
+      camera.position.set(12, 12, 12);
+      camera.lookAt(0, 0, 0);
+
+      // Orbit controls
+      const controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.1;
+      controls.target.set(0, 0, 0);
+
+      // Uniform material, no lighting
+      const voxelMaterial = new THREE.MeshBasicMaterial({ color: 0x00ffff });
+
+      // Voxel group
+      let voxelGroup = new THREE.Group();
+      scene.add(voxelGroup);
+
+      // Compute intersection voxels
+      function computeVoxels(letter1, letter2) {
+        // letter1: front (XY, extrude along Z)
+        // letter2: side (YZ, extrude along X)
+        // Only keep voxels where both extrusions overlap
+        // Grid: x,y,z in [0,6]
+        const voxels = [];
+        const bm1 = LETTERS[letter1];
+        const bm2 = LETTERS[letter2];
+        for (let x = 0; x < 7; ++x) {
+          for (let y = 0; y < 7; ++y) {
+            for (let z = 0; z < 7; ++z) {
+              // Front: (x,y) in bitmap1, extruded along z
+              // Side: (z,y) in bitmap2, extruded along x
+              const frontFilled = bm1[y][x] === 1;
+              const sideFilled = bm2[y][z] === 1;
+              if (frontFilled && sideFilled) {
+                voxels.push({ x, y, z });
+              }
+            }
+          }
+        }
+        return voxels;
+      }
+
+      // Build voxel mesh group
+      function buildVoxels(letter1, letter2) {
+        // Remove old
+        scene.remove(voxelGroup);
+        voxelGroup = new THREE.Group();
+        // Center the grid at (0,0,0)
+        const offset = 3; // (7-1)/2
+        const voxels = computeVoxels(letter1, letter2);
+        const boxGeo = new THREE.BoxGeometry(0.9, 0.9, 0.9);
+        for (const v of voxels) {
+          const mesh = new THREE.Mesh(boxGeo, voxelMaterial);
+          mesh.position.set(v.x - offset, offset - v.y, v.z - offset);
+          voxelGroup.add(mesh);
+        }
+        scene.add(voxelGroup);
+      }
+
+      // Initial build
+      buildVoxels(sel1.value, sel2.value);
+
+      // UI events
+      sel1.addEventListener("change", () => {
+        buildVoxels(sel1.value, sel2.value);
+      });
+      sel2.addEventListener("change", () => {
+        buildVoxels(sel1.value, sel2.value);
+      });
+
+      // Resize
+      function onWindowResize() {
+        const aspect = window.innerWidth / window.innerHeight;
+        camera.left = (frustumSize * aspect) / -2;
+        camera.right = (frustumSize * aspect) / 2;
+        camera.top = frustumSize / 2;
+        camera.bottom = frustumSize / -2;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      }
+      window.addEventListener("resize", onWindowResize, false);
+      onWindowResize();
+
+      // Render loop
+      function animate() {
+        controls.update();
+        renderer.render(scene, camera);
+        requestAnimationFrame(animate);
+      }
+      animate();
+    </script>
+  </body>
+</html>
