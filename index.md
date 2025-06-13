@@ -7,6 +7,7 @@
 - [JSONL viewer](./jsonl-viewer)
 - [JSON → TypeScript](./json-to-typescript)
 - [JSON ↔ YAML](./json-to-yaml)
+- [Plotter/Emoji](./plotters/emoji.html)
 - [Plotter/TTF](./plotters/ttf.html)
 - [Plotter/Hershey+JSON](./plotters/hershey-json.html)
 - [Tax estimator](https://chuanqisun.github.io/tax/)
