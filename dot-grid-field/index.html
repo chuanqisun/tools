@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Interactive Dot Grid (persistent selection)</title>
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #fff;
+      }
+      svg {
+        display: block;
+        width: 100%;
+        height: 100%;
+        background: #fff;
+      }
+
+      /* Invisible cell hit‑box covers each SPACING×SPACING square */
+      .cell rect {
+        fill: transparent;
+        pointer-events: all;
+      }
+
+      /* Dot styling */
+      .dot {
+        fill: #ccc;
+        transition: fill 0.1s;
+        pointer-events: none; /* let the rect handle pointer events */
+      }
+
+      /* Hover via the cell: when you hover the cell, color the dot */
+      .cell:hover .dot {
+        fill: #888;
+      }
+
+      /* Ring around selected dot */
+      .ring {
+        fill: none;
+        stroke: #007bff;
+        stroke-width: 2;
+      }
+    </style>
+  </head>
+  <body>
+    <svg id="grid"></svg>
+
+    <script>
+      (function () {
+        const svg = document.getElementById("grid");
+        const SPACING = 40; // distance between dots / cell size
+        const DOT_RADIUS = 4; // small dot radius
+        const MAX_SCALE = 2; // max zoom factor for closest dot
+        const ATTRACT_DIST = SPACING * 3; // fall‑off distance
+
+        // color fall‑off: HSL lightness from BASE_LIGHT → MIN_LIGHT
+        const BASE_LIGHT = 90; // default gray = 90% lightness
+        const MIN_LIGHT = 20; // darkest at mouse = 20% lightness
+
+        // ────────────────
+        // Keep track of which dot‑coordinates are selected
+        // ────────────────
+        const selectedCenters = new Set();
+
+        // Reactive magnetize on mousemove / clear on leave
+        svg.addEventListener("mousemove", onMouseMove);
+        svg.addEventListener("mouseleave", onMouseLeave);
+
+        // Draw/redo grid
+        window.addEventListener("resize", drawGrid);
+        drawGrid();
+
+        // ───────────────────────────
+        // core: build the grid of cells + dots
+        // ───────────────────────────
+        function drawGrid() {
+          // clear everything
+          while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+          const W = window.innerWidth;
+          const H = window.innerHeight;
+          svg.setAttribute("width", W);
+          svg.setAttribute("height", H);
+
+          // make all the cells + dots
+          for (let x = SPACING / 2; x < W; x += SPACING) {
+            for (let y = SPACING / 2; y < H; y += SPACING) {
+              const cell = document.createElementNS("http://www.w3.org/2000/svg", "g");
+              cell.classList.add("cell");
+              cell.dataset.cx = x;
+              cell.dataset.cy = y;
+
+              // invisible hit‑box
+              const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+              rect.setAttribute("x", x - SPACING / 2);
+              rect.setAttribute("y", y - SPACING / 2);
+              rect.setAttribute("width", SPACING);
+              rect.setAttribute("height", SPACING);
+              cell.appendChild(rect);
+
+              // visible dot
+              const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+              dot.setAttribute("cx", x);
+              dot.setAttribute("cy", y);
+              dot.setAttribute("r", DOT_RADIUS);
+              dot.classList.add("dot");
+              cell.appendChild(dot);
+
+              // click toggles selection
+              cell.addEventListener("click", onCellClick);
+
+              svg.appendChild(cell);
+
+              // If this center was previously selected, re‑draw a ring
+              const key = `${x},${y}`;
+              if (selectedCenters.has(key)) {
+                drawRing(x, y, key, cell);
+              }
+            }
+          }
+        }
+
+        // ───────────────────────────
+        // click handler: toggle ring + update Set
+        // ───────────────────────────
+        function onCellClick(e) {
+          const cell = e.currentTarget;
+          const x = +cell.dataset.cx;
+          const y = +cell.dataset.cy;
+          const key = `${x},${y}`;
+
+          if (selectedCenters.has(key)) {
+            // unselect: remove ring and from Set
+            const ring = svg.querySelector(`#ring-${key}`);
+            if (ring) ring.remove();
+            selectedCenters.delete(key);
+          } else {
+            // select: draw ring + add to Set
+            drawRing(x, y, key, cell);
+            selectedCenters.add(key);
+          }
+        }
+
+        // helper: draw a ring around (x,y) before its cell so it sits underneath
+        function drawRing(x, y, key, cell) {
+          const ring = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+          ring.setAttribute("id", `ring-${key}`);
+          ring.setAttribute("cx", x);
+          ring.setAttribute("cy", y);
+          ring.setAttribute("r", DOT_RADIUS * 4);
+          ring.classList.add("ring");
+          // insert the ring behind this cell
+          svg.insertBefore(ring, cell);
+        }
+
+        // ───────────────────────────
+        // reactive field handlers
+        // ───────────────────────────
+        function onMouseMove(evt) {
+          const pt = svg.createSVGPoint();
+          pt.x = evt.clientX;
+          pt.y = evt.clientY;
+          const svgP = pt.matrixTransform(svg.getScreenCTM().inverse());
+
+          svg.querySelectorAll(".dot").forEach((dot) => {
+            const dx = dot.cx.baseVal.value - svgP.x;
+            const dy = dot.cy.baseVal.value - svgP.y;
+            const dist = Math.hypot(dx, dy);
+
+            // normalized proximity t = exp(−dist/ATTRACT_DIST)
+            const t = Math.exp(-dist / ATTRACT_DIST);
+
+            // scale = 1 → MAX_SCALE
+            const scale = 1 + (MAX_SCALE - 1) * t;
+            dot.setAttribute("r", DOT_RADIUS * scale);
+
+            // lightness = BASE_LIGHT → MIN_LIGHT
+            const light = BASE_LIGHT - (BASE_LIGHT - MIN_LIGHT) * t;
+            // only override when not hovered (so .cell:hover .dot still wins)
+            if (!dot.parentNode.matches(":hover")) {
+              dot.style.fill = `hsl(0,0%,${light.toFixed(1)}%)`;
+            }
+          });
+        }
+
+        function onMouseLeave() {
+          svg.querySelectorAll(".dot").forEach((dot) => {
+            dot.setAttribute("r", DOT_RADIUS);
+            dot.style.fill = "";
+          });
+        }
+      })();
+    </script>
+  </body>
+</html>
