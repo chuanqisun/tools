@@ -2,6 +2,7 @@
 - [Assembly theory](./assembly-theory/)
 - [Dot grid field](./dot-grid-field/)
 - [File → URL](https://chuanqisun.github.io/fileurl/)
+- [GitHub Issue Graph](https://github.com/chuanqisun/issue-graph)
 - [Keyboard bounce tester](./keyboard-bounce-tester/)
 - [Markdown preview](./markdown-preview)
 - [Media Lab Game of Life](./media-lab-game-of-life)
