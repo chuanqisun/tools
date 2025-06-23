@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Clipboard++</title>
+
+  <style>
+    /* ===== Bare‑minimum layout CSS (unchanged) ===== */
+    * { box-sizing: border-box; }
+    body, html { margin: 0; padding: 0; height: 100%; font-family: sans-serif; }
+
+    header {
+      background: #333;
+      color: white;
+      padding: 0.5rem 1rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 1.5rem;
+    }
+    header .actions button {
+      margin-left: 0.5rem;
+      padding: 0.3rem 0.7rem;
+      border: none;
+      border-radius: 3px;
+      background: #555;
+      color: white;
+      cursor: pointer;
+    }
+    header .actions button:hover {
+      background: #777;
+    }
+
+    #container {
+      display: flex;
+      height: calc(100% - 2.5rem); /* header height */
+    }
+    #file-list {
+      width: 250px;
+      border-right: 1px solid #ccc;
+      overflow-y: auto;
+      padding-top: 0.5rem;
+    }
+    #file-list ul {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+    #file-list li.file-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.5rem;
+      border-bottom: 1px solid #eee;
+    }
+    #file-list li.selected {
+      background: #ddd;
+    }
+    #file-list li .file-name {
+      flex-grow: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      cursor: pointer;
+    }
+    #file-list li .file-actions {
+      display: flex;
+      align-items: center;
+      margin-left: 0.5rem;
+    }
+    #file-list li .context-menu-container {
+      position: relative;
+    }
+    #file-list li .more-options-btn {
+      background: #6c757d;
+      color: white;
+      border: none;
+      border-radius: 3px;
+      padding: 0.2rem 0.5rem;
+      cursor: pointer;
+      font-size: 0.8em;
+      opacity: 0.8;
+    }
+    #file-list li .more-options-btn:hover {
+      opacity: 1;
+      background: #5a6268;
+    }
+    #file-list li .context-menu {
+      display: none;
+      position: absolute;
+      right: 0;
+      top: 100%;
+      background: white;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+      list-style: none;
+      padding: 0;
+      margin: 5px 0 0 0;
+      z-index: 20;
+      min-width: 100px;
+    }
+    #file-list li .context-menu.show {
+      display: block;
+    }
+    #file-list li .context-menu li {
+      padding: 8px 12px;
+      cursor: pointer;
+      font-size: 0.9em;
+      color: #333;
+      border-bottom: none;
+      display: block;
+    }
+    #file-list li .context-menu li:hover {
+      background: #f0f0f0;
+    }
+    #file-list li .context-menu li:last-child {
+      border-bottom: none;
+    }
+
+    #file-viewer {
+      position: relative;
+      flex: 1;
+      overflow: hidden;
+    }
+    #toolbar {
+      position: absolute;
+      top: 0.5rem;
+      right: 0.5rem;
+      z-index: 10;
+    }
+    #toolbar button {
+      padding: 0.3rem 0.7rem;
+      border: none;
+      border-radius: 3px;
+      background: #007bff;
+      color: white;
+      cursor: pointer;
+    }
+    #toolbar button:hover {
+      background: #0056b3;
+    }
+
+    #editor, #preview {
+      width: 100%;
+      height: 100%;
+    }
+    #editor {
+      display: none;
+    }
+    #preview {
+      display: none;
+      border: none;
+    }
+    .cm-editor {
+      height: 100%;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Clipboard++</h1>
+    <div class="actions">
+      <button id="clear-all-btn">Clear All</button>
+    </div>
+  </header>
+  <div id="container">
+    <aside id="file-list">
+      <ul></ul>
+    </aside>
+    <section id="file-viewer">
+      <div id="toolbar">
+        <button id="toggle-mode">Preview</button>
+      </div>
+      <div id="editor"></div>
+      <div id="preview"></div>
+    </section>
+  </div>
+
+  <script type="module">
+    /**
+     * ================= High‑Level App Design =================
+     *
+     * This application uses a hybrid architecture. A high-level `AppController`
+     * class acts as an OOP "shell" to manage the application's state and
+     * orchestrate user interactions. The bulk of the application's logic,
+     * including DOM manipulation, data transformation, and interactions with
+     * external APIs like the Origin Private File System (OPFS), is implemented
+     * as a collection of pure(r), modular functions.
+     *
+     * Core Principles:
+     * 1.  **State Management:** The `AppController` holds a single `state` object,
+     *     which is the single source of truth for the application. State includes
+     *     the list of files, the currently selected file, and the UI mode.
+     * 2.  **Unidirectional Data Flow:** Events from the UI or system (like 'paste')
+     *     are handled by the controller. The controller updates its state and then
+     *     triggers a re-render of the application. It does not directly manipulate
+     *     the DOM.
+     * 3.  **Functional Core:** Pure functions are used for rendering, data
+     *     processing, and business logic. These functions receive state and data
+     *     as input and produce UI elements or new data as output. This separation
+     *     makes the logic more predictable, reusable, and easier to test.
+     * 4.  **Data Model:** Files are represented as plain JavaScript objects, not
+     *     class instances. This keeps data and logic separate. A `createFileObject`
+     *     factory function ensures consistent object structure.
+     * 5.  **Lazy Loading & Persistence:** File content is lazy-loaded from OPFS
+     *     on demand. All changes are automatically persisted back to OPFS.
+     *
+     * Flow:
+     *   Event -> Controller Method -> Update State -> Call `renderApp()` -> Pure functions
+     *   render UI based on new state.
+     */
+
+    // === Module imports ===
+    import { EditorState } from "https://esm.sh/@codemirror/state";
+    import { EditorView, keymap, highlightActiveLine, lineNumbers } from "https://esm.sh/@codemirror/view";
+    import { defaultHighlightStyle, syntaxHighlighting } from "https://esm.sh/@codemirror/language";
+    import { defaultKeymap } from "https://esm.sh/@codemirror/commands";
+    import { marked } from "https://esm.sh/marked";
+
+    // ===================================================================
+    // == High-Level Application Controller (OOP Shell)
+    // ===================================================================
+
+    class AppController {
+      constructor() {
+        // The single source of truth for the application state
+        this.state = {
+          files: [],              // Array of file objects
+          selectedFileId: null,   // ID of the selected file
+          mode: 'preview',        // 'edit' or 'preview'
+          opfsRoot: null,         // Handle to the OPFS root directory
+          editorView: null,       // The active CodeMirror instance
+          activeContextMenuId: null, // ID of the file with an open context menu
+        };
+
+        // DOM element references
+        this.dom = {
+          listUl: document.querySelector('#file-list ul'),
+          editorDiv: document.getElementById('editor'),
+          previewDiv: document.getElementById('preview'),
+          toggleBtn: document.getElementById('toggle-mode'),
+          clearAllBtn: document.getElementById('clear-all-btn'),
+          toolbar: document.getElementById('toolbar'),
+        };
+
+        this._init();
+      }
+
+      /**
+       * Initializes the application, loads files, and sets up event listeners.
+       */
+      async _init() {
+        this.state.opfsRoot = await getOpfsRoot();
+        if (!this.state.opfsRoot) {
+          alert('Failed to initialize persistent storage. Files will not be saved across sessions.');
+        } else {
+          const initialFiles = await loadFilesFromOpfs(this.state.opfsRoot);
+          this.state.files = initialFiles;
+          if (initialFiles.length > 0) {
+            this.state.selectedFileId = initialFiles[0].id;
+          }
+        }
+
+        this._addEventListeners();
+        this.render();
+      }
+
+      /**
+       * Centralized event listener setup.
+       */
+      _addEventListeners() {
+        document.body.addEventListener('paste', e => this.handlePaste(e));
+        this.dom.clearAllBtn.addEventListener('click', () => this.handleClearAll());
+        this.dom.toggleBtn.addEventListener('click', () => this.handleToggleMode());
+        document.addEventListener('click', e => this.handleDocumentClick(e));
+      }
+
+      /**
+       * The main render function. Called whenever state changes.
+       */
+      render() {
+        // Pass state, DOM elements, and handlers to the pure rendering functions
+        renderApp(this.state, this.dom, {
+          onSelectFile: this.handleSelectFile.bind(this),
+          onDeleteFile: this.handleDeleteFile.bind(this),
+          onCopyFile: this.handleCopyFile.bind(this),
+          onDownloadFile: this.handleDownloadFile.bind(this),
+          onToggleContextMenu: this.handleToggleContextMenu.bind(this),
+          onTextChange: this.handleTextChange.bind(this),
+        });
+      }
+
+      // --- Event Handlers ---
+
+      async handlePaste(e) {
+        const newFiles = await processPastedFiles(e.clipboardData.files, this.state.opfsRoot);
+        if (newFiles.length === 0) return;
+
+        this.state.files = [...this.state.files, ...newFiles];
+        if (!this.state.selectedFileId) {
+          this.state.selectedFileId = newFiles[0].id;
+        }
+        this.render();
+      }
+
+      async handleClearAll() {
+        if (!confirm('Are you sure you want to delete ALL persisted files? This cannot be undone.')) return;
+        if (!this.state.opfsRoot) return;
+
+        await clearAllOpfsFiles(this.state.opfsRoot);
+        this.state.files.forEach(f => URL.revokeObjectURL(f.url)); // Cleanup URLs
+
+        this.state.files = [];
+        this.state.selectedFileId = null;
+        this.render();
+        alert('All files cleared from storage!');
+      }
+
+      handleToggleMode() {
+        this.state.mode = this.state.mode === 'edit' ? 'preview' : 'edit';
+        this.render();
+      }
+
+      handleSelectFile(fileId) {
+        if (this.state.selectedFileId === fileId) return;
+        this.state.selectedFileId = fileId;
+        this.state.mode = 'preview'; // Default to preview mode on file switch
+        this.render();
+      }
+
+      async handleDeleteFile(fileId) {
+        const fileToDelete = findFileById(this.state.files, fileId);
+        if (!fileToDelete || !confirm(`Are you sure you want to delete "${fileToDelete.name}"?`)) return;
+
+        if (fileToDelete.handle) {
+          await deleteFileFromOpfs(this.state.opfsRoot, fileToDelete.name);
+        }
+        URL.revokeObjectURL(fileToDelete.url); // Cleanup URL
+
+        this.state.files = this.state.files.filter(f => f.id !== fileId);
+        if (this.state.selectedFileId === fileId) {
+          this.state.selectedFileId = this.state.files.length > 0 ? this.state.files[0].id : null;
+        }
+        this.render();
+      }
+
+      async handleCopyFile(fileId) {
+        const fileToCopy = findFileById(this.state.files, fileId);
+        if (!fileToCopy) return;
+        await copyFileContentToClipboard(fileToCopy);
+        alert(`Content of "${fileToCopy.name}" copied to clipboard!`);
+      }
+
+      async handleDownloadFile(fileId) {
+        const fileToDownload = findFileById(this.state.files, fileId);
+        if (!fileToDownload) return;
+        await downloadFile(fileToDownload);
+      }
+
+      handleToggleContextMenu(fileId) {
+        this.state.activeContextMenuId = this.state.activeContextMenuId === fileId ? null : fileId;
+        this.render();
+      }
+
+      handleDocumentClick(e) {
+        // If a menu is open and the click is outside a context menu container
+        if (this.state.activeContextMenuId && !e.target.closest('.context-menu-container')) {
+          this.state.activeContextMenuId = null;
+          this.render();
+        }
+      }
+
+      async handleTextChange(newText) {
+        const selectedFile = findFileById(this.state.files, this.state.selectedFileId);
+        if (!selectedFile || selectedFile.text === newText) return;
+
+        // Update file object state
+        selectedFile.text = newText;
+        const newBlob = new Blob([newText], { type: selectedFile.type });
+        URL.revokeObjectURL(selectedFile.url); // Revoke old URL
+        selectedFile.url = URL.createObjectURL(newBlob);
+
+        // Persist change to OPFS
+        if (selectedFile.handle) {
+          await saveFileToOpfs(selectedFile.handle, newBlob);
+        }
+      }
+    }
+
+    // ===================================================================
+    // == Pure(r) Functions for Logic and Rendering
+    // ===================================================================
+
+    // --- Data & State Functions ---
+
+    /** Creates a plain object representing a file. */
+    function createFileObject(file, handle = null) {
+      return {
+        id: crypto.randomUUID(),
+        name: file.name,
+        type: file.type,
+        handle: handle,
+        originalBlob: file, // The initial blob, for non-text files or first save
+        text: null,         // Text content, lazy-loaded
+        url: URL.createObjectURL(file),
+      };
+    }
+
+    /** Finds a file in an array by its ID. */
+    function findFileById(files, id) {
+      return files.find(f => f.id === id) || null;
+    }
+
+    /** Gets the current blob representation of a file object. */
+    async function getFileBlob(fileObject) {
+      if (fileObject.text !== null) {
+        return new Blob([fileObject.text], { type: fileObject.type });
+      }
+      if (fileObject.handle) {
+        return await fileObject.handle.getFile();
+      }
+      return fileObject.originalBlob;
+    }
+
+    // --- OPFS & File System Functions ---
+
+    /** Gets the root directory handle for OPFS. */
+    async function getOpfsRoot() {
+      try {
+        return await navigator.storage.getDirectory();
+      } catch (e) {
+        console.error('Failed to get OPFS root directory:', e);
+        return null;
+      }
+    }
+
+    /** Loads all files from OPFS and returns them as file objects. */
+    async function loadFilesFromOpfs(opfsRoot) {
+      const files = [];
+      try {
+        for await (const handle of opfsRoot.values()) {
+          if (handle.kind === 'file') {
+            const fileData = await handle.getFile();
+            files.push(createFileObject(fileData, handle));
+          }
+        }
+      } catch (e) {
+        console.error('Error loading files from OPFS:', e);
+      }
+      return files;
+    }
+
+    /** Processes pasted files, saves them to OPFS, and returns file objects. */
+    async function processPastedFiles(pastedFiles, opfsRoot) {
+      const newFileObjects = [];
+      for (const file of pastedFiles) {
+        try {
+          const handle = opfsRoot ? await opfsRoot.getFileHandle(file.name, { create: true }) : null;
+          if (handle) {
+            await saveFileToOpfs(handle, file);
+          }
+          newFileObjects.push(createFileObject(file, handle));
+        } catch (e) {
+          console.error(`Failed to save pasted file ${file.name} to OPFS:`, e);
+        }
+      }
+      return newFileObjects;
+    }
+
+    /** Saves a blob to a given OPFS file handle. */
+    async function saveFileToOpfs(handle, contentBlob) {
+      const writable = await handle.createWritable();
+      await writable.write(contentBlob);
+      await writable.close();
+    }
+
+    /** Deletes a file from OPFS by name. */
+    async function deleteFileFromOpfs(opfsRoot, fileName) {
+      try {
+        await opfsRoot.removeEntry(fileName);
+      } catch (e) {
+        console.error(`Error deleting ${fileName} from OPFS:`, e);
+      }
+    }
+
+    /** Clears all files from the OPFS root directory. */
+    async function clearAllOpfsFiles(opfsRoot) {
+      for await (const entry of opfsRoot.values()) {
+        await opfsRoot.removeEntry(entry.name, { recursive: true });
+      }
+    }
+
+    // --- Clipboard & Download Functions ---
+
+    /** Copies a file's content (text or blob) to the clipboard. */
+    async function copyFileContentToClipboard(fileObject) {
+      try {
+        if (fileObject.type.startsWith('text/')) {
+          if (fileObject.text === null && fileObject.handle) {
+            const file = await fileObject.handle.getFile();
+            fileObject.text = await file.text(); // Lazy load for copying
+          }
+          await navigator.clipboard.writeText(fileObject.text || '');
+        } else {
+          const blob = await getFileBlob(fileObject);
+          await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+        }
+      } catch (err) {
+        console.error('Failed to copy content:', err);
+        alert(`Failed to copy "${fileObject.name}" to clipboard.`);
+      }
+    }
+
+    /** Triggers a browser download for a file. */
+    async function downloadFile(fileObject) {
+      const blob = await getFileBlob(fileObject);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileObject.name;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    // --- DOM Rendering Functions ---
+
+    /** Main application renderer. */
+    function renderApp(state, dom, handlers) {
+      renderFileList(state.files, state.selectedFileId, state.activeContextMenuId, dom.listUl, handlers);
+      renderViewer(state, dom, handlers);
+    }
+
+    /** Renders the list of files. */
+    function renderFileList(files, selectedId, activeMenuId, parentEl, handlers) {
+      parentEl.innerHTML = '';
+      const fragment = document.createDocumentFragment();
+      files.forEach(file => {
+        const isSelected = file.id === selectedId;
+        const isMenuOpen = file.id === activeMenuId;
+        const li = createFileListItem(file, isSelected, isMenuOpen, handlers);
+        fragment.appendChild(li);
+      });
+      parentEl.appendChild(fragment);
+    }
+
+    /** Creates a single file list item element. */
+    function createFileListItem(file, isSelected, isMenuOpen, handlers) {
+      const li = document.createElement('li');
+      li.className = `file-item ${isSelected ? 'selected' : ''}`;
+      li.dataset.fileId = file.id;
+
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'file-name';
+      nameSpan.textContent = file.name;
+      nameSpan.onclick = () => handlers.onSelectFile(file.id);
+
+      const actionsDiv = document.createElement('div');
+      actionsDiv.className = 'file-actions';
+
+      const menuContainer = document.createElement('div');
+      menuContainer.className = 'context-menu-container';
+
+      const menuBtn = document.createElement('button');
+      menuBtn.className = 'more-options-btn';
+      menuBtn.textContent = '...';
+      menuBtn.onclick = (e) => {
+        e.stopPropagation();
+        handlers.onToggleContextMenu(file.id);
+      };
+
+      const menu = document.createElement('ul');
+      menu.className = `context-menu ${isMenuOpen ? 'show' : ''}`;
+      menu.innerHTML = `
+        <li data-action="copy">Copy</li>
+        <li data-action="download">Download</li>
+        <li data-action="delete">Delete</li>
+      `;
+      menu.onclick = (e) => {
+        e.stopPropagation();
+        const action = e.target.dataset.action;
+        if (action === 'copy') handlers.onCopyFile(file.id);
+        if (action === 'download') handlers.onDownloadFile(file.id);
+        if (action === 'delete') handlers.onDeleteFile(file.id);
+        handlers.onToggleContextMenu(null); // Close menu after action
+      };
+
+      menuContainer.append(menuBtn, menu);
+      actionsDiv.appendChild(menuContainer);
+      li.append(nameSpan, actionsDiv);
+      return li;
+    }
+
+    /** Renders the main viewer area (editor or preview). */
+    async function renderViewer(state, dom, handlers) {
+      const selectedFile = findFileById(state.files, state.selectedFileId);
+
+      // Clean up previous state
+      dom.editorDiv.style.display = 'none';
+      dom.previewDiv.style.display = 'none';
+      dom.toolbar.style.display = 'none';
+      if (state.editorView) {
+        state.editorView.destroy();
+        state.editorView = null;
+      }
+
+      if (!selectedFile) return;
+
+      const isText = selectedFile.type.startsWith('text/');
+      dom.toolbar.style.display = 'block';
+      dom.toggleBtn.style.display = isText ? 'inline-block' : 'none';
+      dom.toggleBtn.textContent = state.mode === 'edit' ? 'Preview' : 'Edit';
+
+      // Lazy load text content if needed for edit mode or markdown preview
+      if (isText && selectedFile.text === null && selectedFile.handle) {
+        const fileData = await selectedFile.handle.getFile();
+        selectedFile.text = await fileData.text();
+      }
+
+      if (isText && state.mode === 'edit') {
+        dom.editorDiv.style.display = 'block';
+        state.editorView = createCodeMirrorInstance(dom.editorDiv, selectedFile.text || '', handlers.onTextChange);
+      } else {
+        dom.previewDiv.style.display = 'block';
+        renderPreviewContent(selectedFile, dom.previewDiv);
+      }
+    }
+
+    /** Creates a CodeMirror editor instance. */
+    function createCodeMirrorInstance(parentEl, doc, onUpdate) {
+      parentEl.innerHTML = ''; // Clear previous
+      return new EditorView({
+        parent: parentEl,
+        state: EditorState.create({
+          doc,
+          extensions: [
+            lineNumbers(),
+            highlightActiveLine(),
+            syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+            keymap.of(defaultKeymap),
+            EditorView.updateListener.of(u => {
+              if (u.docChanged) {
+                onUpdate(u.state.doc.toString());
+              }
+            })
+          ]
+        })
+      });
+    }
+
+    /** Renders the content for the preview pane. */
+    function renderPreviewContent(file, parentEl) {
+      parentEl.innerHTML = '';
+      if (file.type === 'text/markdown') {
+        const html = marked.parse(file.text || '');
+        parentEl.innerHTML = `<div style="padding:1rem; overflow:auto; height:100%;">${html}</div>`;
+      } else {
+        const obj = document.createElement('object');
+        obj.type = file.type;
+        obj.data = file.url;
+        obj.style.width = '100%';
+        obj.style.height = '100%';
+        if (file.type.startsWith('image/')) {
+          obj.style.objectFit = 'contain';
+          obj.style.backgroundColor = 'black';
+        }
+        parentEl.appendChild(obj);
+      }
+    }
+
+    // === Bootstrap the application ===
+    window.addEventListener('DOMContentLoaded', () => {
+      new AppController();
+    });
+  </script>
+</body>
+</html>

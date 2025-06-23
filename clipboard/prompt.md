@@ -1,0 +1,1 @@
+Respond with updated HTML. Make sure <script> always starts with up-to-date high level app design.
