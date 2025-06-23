@@ -5,9 +5,20 @@
   <title>Clipboard++</title>
 
   <style>
-    /* ===== Bare‑minimum layout CSS (unchanged) ===== */
-    * { box-sizing: border-box; }
-    body, html { margin: 0; padding: 0; height: 100%; font-family: sans-serif; }
+    /* ===== Bare‑minimum layout CSS (updated for Grid) ===== */
+    * { box-sizing: border; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%; /* Ensure html takes full height */
+      font-family: sans-serif;
+    }
+
+    body {
+      display: grid; /* Make body a grid container */
+      grid-template-rows: auto 1fr; /* Header takes content height, #container takes remaining */
+      height: 100vh; /* Ensure body fills the viewport height */
+    }
 
     header {
       background: #333;
@@ -16,6 +27,7 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
+      /* No grid-specific properties needed here, it's the first item in the body grid */
     }
     header h1 {
       margin: 0;
@@ -35,13 +47,15 @@
     }
 
     #container {
-      display: flex;
-      height: calc(100% - 2.5rem); /* header height */
+      display: grid; /* Changed from flex to grid */
+      grid-template-columns: 250px 1fr; /* File list fixed width, viewer takes remaining */
+      /* Removed height: calc(100% - 2.5rem); as grid handles the height distribution */
+      overflow: hidden; /* Prevents scrollbars on the container itself if children overflow */
     }
     #file-list {
-      width: 250px;
+      /* width: 250px; is now defined by grid-template-columns */
       border-right: 1px solid #ccc;
-      overflow-y: auto;
+      overflow-y: auto; /* Allows scrolling within the file list if content exceeds height */
       padding-top: 0.5rem;
     }
     #file-list ul {
@@ -55,6 +69,10 @@
       align-items: center;
       padding: 0.5rem;
       border-bottom: 1px solid #eee;
+      cursor: pointer; /* Added for full-height click target */
+    }
+    #file-list li.file-item:hover { /* Added hover state for better UX */
+      background-color: #f0f0f0;
     }
     #file-list li.selected {
       background: #ddd;
@@ -64,7 +82,7 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      cursor: pointer;
+      /* cursor: pointer; Removed from here, now on parent li */
     }
     #file-list li .file-actions {
       display: flex;
@@ -123,8 +141,8 @@
 
     #file-viewer {
       position: relative;
-      flex: 1;
-      overflow: hidden;
+      /* flex: 1; is no longer needed, grid handles the sizing */
+      overflow: hidden; /* Important for containing editor/preview */
     }
     #toolbar {
       position: absolute;
@@ -248,8 +266,8 @@
           previewDiv: document.getElementById('preview'),
           toggleBtn: document.getElementById('toggle-mode'),
           clearAllBtn: document.getElementById('clear-all-btn'),
-          uploadBtn: document.getElementById('upload-btn'), // New
-          fileInput: document.getElementById('file-input'), // New
+          uploadBtn: document.getElementById('upload-btn'),
+          fileInput: document.getElementById('file-input'),
           toolbar: document.getElementById('toolbar'),
         };
 
@@ -281,8 +299,8 @@
       _addEventListeners() {
         document.body.addEventListener('paste', e => this.handlePaste(e));
         this.dom.clearAllBtn.addEventListener('click', () => this.handleClearAll());
-        this.dom.uploadBtn.addEventListener('click', () => this.dom.fileInput.click()); // New: Trigger hidden input
-        this.dom.fileInput.addEventListener('change', e => this.handleUploadFiles(e)); // New: Handle file selection
+        this.dom.uploadBtn.addEventListener('click', () => this.dom.fileInput.click());
+        this.dom.fileInput.addEventListener('change', e => this.handleUploadFiles(e));
         this.dom.toggleBtn.addEventListener('click', () => this.handleToggleMode());
         document.addEventListener('click', e => this.handleDocumentClick(e));
       }
@@ -297,8 +315,8 @@
           onDeleteFile: this.handleDeleteFile.bind(this),
           onCopyFile: this.handleCopyFile.bind(this),
           onDownloadFile: this.handleDownloadFile.bind(this),
-          onRenameFile: this.handleRenameFile.bind(this), // New
-          onChangeMimeType: this.handleChangeMimeType.bind(this), // New
+          onRenameFile: this.handleRenameFile.bind(this),
+          onChangeMimeType: this.handleChangeMimeType.bind(this),
           onToggleContextMenu: this.handleToggleContextMenu.bind(this),
           onTextChange: this.handleTextChange.bind(this),
         });
@@ -666,11 +684,12 @@
       const li = document.createElement('li');
       li.className = `file-item ${isSelected ? 'selected' : ''}`;
       li.dataset.fileId = file.id;
+      li.onclick = () => handlers.onSelectFile(file.id); // Moved click handler to the entire li
 
       const nameSpan = document.createElement('span');
       nameSpan.className = 'file-name';
       nameSpan.textContent = file.name;
-      nameSpan.onclick = () => handlers.onSelectFile(file.id);
+      // nameSpan.onclick = () => handlers.onSelectFile(file.id); // Removed from here
 
       const actionsDiv = document.createElement('div');
       actionsDiv.className = 'file-actions';
@@ -682,7 +701,7 @@
       menuBtn.className = 'more-options-btn';
       menuBtn.textContent = '...';
       menuBtn.onclick = (e) => {
-        e.stopPropagation();
+        e.stopPropagation(); // Prevent the li's click handler from firing
         handlers.onToggleContextMenu(file.id);
       };
 
@@ -691,17 +710,17 @@
       menu.innerHTML = `
         <li data-action="copy">Copy</li>
         <li data-action="download">Download</li>
-        <li data-action="rename">Rename</li>       <!-- New -->
-        <li data-action="change-type">Change Type</li> <!-- New -->
+        <li data-action="rename">Rename</li>
+        <li data-action="change-type">Change Type</li>
         <li data-action="delete">Delete</li>
       `;
       menu.onclick = (e) => {
-        e.stopPropagation();
+        e.stopPropagation(); // Prevent the li's click handler from firing
         const action = e.target.dataset.action;
         if (action === 'copy') handlers.onCopyFile(file.id);
         else if (action === 'download') handlers.onDownloadFile(file.id);
-        else if (action === 'rename') handlers.onRenameFile(file.id); // New
-        else if (action === 'change-type') handlers.onChangeMimeType(file.id); // New
+        else if (action === 'rename') handlers.onRenameFile(file.id);
+        else if (action === 'change-type') handlers.onChangeMimeType(file.id);
         else if (action === 'delete') handlers.onDeleteFile(file.id);
         handlers.onToggleContextMenu(null); // Close menu after action
       };
