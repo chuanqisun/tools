@@ -347,7 +347,7 @@
       // --- Event Handlers (remain mostly unchanged) ---
 
       async handlePaste(e) {
-        const newFiles = await processPastedFiles(e.clipboardData.files, this.state.opfsRoot);
+        const newFiles = await processPastedItems(e.clipboardData, this.state.opfsRoot);
         if (newFiles.length === 0) return;
         this.state.files = [...this.state.files, ...newFiles];
         if (!this.state.selectedFileId) this.state.selectedFileId = newFiles[0].id;
@@ -355,7 +355,7 @@
       }
 
       async handleUploadFiles(e) {
-        const newFiles = await processPastedFiles(e.target.files, this.state.opfsRoot);
+        const newFiles = await processPastedItems(e.target, this.state.opfsRoot); // Re-use processPastedItems for FileList
         if (newFiles.length === 0) return;
         this.state.files = [...this.state.files, ...newFiles];
         if (!this.state.selectedFileId) this.state.selectedFileId = newFiles[0].id;
@@ -567,17 +567,82 @@
       catch (e) { console.error('Error loading from OPFS:', e); }
       return files;
     }
-    async function processPastedFiles(inputFiles, opfsRoot) {
+
+    /**
+     * Processes files from a DataTransfer object (paste event) or a FileList (input element).
+     * It iterates through all items and attempts to get a File object for each.
+     *
+     * @param {DataTransfer|HTMLInputElement} source The clipboardData object or the file input element.
+     * @param {FileSystemDirectoryHandle} opfsRoot The OPFS root directory handle.
+     * @returns {Promise<Array<Object>>} An array of file objects to be added to the state.
+     */
+    async function processPastedItems(source, opfsRoot) {
       const newFileObjects = [];
-      for (const file of inputFiles) {
+      let items = [];
+
+      if (source instanceof DataTransfer) {
+        // Handle paste event (DataTransfer.items)
+        for (let i = 0; i < source.items.length; i++) {
+          const item = source.items[i];
+          if (item.kind === 'file') {
+            items.push(item.getAsFile()); // Get the File object
+          } else if (item.kind === 'string' && item.type === 'text/plain') {
+            // Handle plain text as a file
+            const text = await new Promise(resolve => item.getAsString(resolve));
+            if (text) {
+              const blob = new Blob([text], { type: 'text/plain' });
+              // Give it a default name, e.g., "clipboard_text_1.txt"
+              const name = `clipboard_text_${Date.now()}.txt`;
+              items.push(new File([blob], name, { type: 'text/plain' }));
+            }
+          } else if (item.kind === 'string' && item.type === 'text/html') {
+            // Handle HTML as a file
+            const htmlContent = await new Promise(resolve => item.getAsString(resolve));
+            if (htmlContent) {
+              const blob = new Blob([htmlContent], { type: 'text/html' });
+              const name = `clipboard_html_${Date.now()}.html`;
+              items.push(new File([blob], name, { type: 'text/html' }));
+            }
+          }
+        }
+      } else if (source instanceof HTMLInputElement && source.files) {
+        // Handle file input (FileList)
+        items = Array.from(source.files);
+      }
+
+      for (const file of items) {
+        if (!file) continue; // Skip if getAsFile() or File constructor returned null/undefined
+
         try {
-          const handle = opfsRoot ? await opfsRoot.getFileHandle(file.name, { create: true }) : null;
+          // Ensure unique name for OPFS if a file with the same name already exists
+          let fileName = file.name;
+          let counter = 1;
+          while (opfsRoot && await fileExistsInOpfs(opfsRoot, fileName)) {
+            const parts = file.name.split('.');
+            const ext = parts.pop();
+            const baseName = parts.join('.');
+            fileName = `${baseName}_${counter++}.${ext}`;
+          }
+
+          const handle = opfsRoot ? await opfsRoot.getFileHandle(fileName, { create: true }) : null;
           if (handle) await saveFileToOpfs(handle, file);
           newFileObjects.push(createFileObject(file, handle));
-        } catch (e) { console.error(`Failed to save ${file.name}:`, e); }
+        } catch (e) {
+          console.error(`Failed to process ${file.name || 'item'}:`, e);
+        }
       }
       return newFileObjects;
     }
+
+    async function fileExistsInOpfs(opfsRoot, fileName) {
+      try {
+        await opfsRoot.getFileHandle(fileName);
+        return true;
+      } catch (e) {
+        return e.name === 'NotFoundError' ? false : true; // True for other errors too, to be safe
+      }
+    }
+
     async function saveFileToOpfs(handle, contentBlob) { const w = await handle.createWritable(); await w.write(contentBlob); await w.close(); }
     async function deleteFileFromOpfs(opfsRoot, fileName) { try { await opfsRoot.removeEntry(fileName); } catch (e) { console.error(`Error deleting ${fileName}:`, e); } }
     async function clearAllOpfsFiles(opfsRoot) { for await (const e of opfsRoot.values()) await opfsRoot.removeEntry(e.name, { recursive: true }); }
