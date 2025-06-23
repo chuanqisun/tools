@@ -164,6 +164,7 @@
   <header>
     <h1>Clipboard++</h1>
     <div class="actions">
+      <button id="upload-btn">Upload Files</button>
       <button id="clear-all-btn">Clear All</button>
     </div>
   </header>
@@ -179,6 +180,9 @@
       <div id="preview"></div>
     </section>
   </div>
+
+  <!-- Hidden file input for programmatic triggering -->
+  <input type="file" id="file-input" multiple style="display: none;">
 
   <script type="module">
     /**
@@ -199,7 +203,7 @@
      *     are handled by the controller. The controller updates its state and then
      *     triggers a re-render of the application. It does not directly manipulate
      *     the DOM.
-     * 3.  **Functional Core:** Pure functions are used for rendering, data
+     3.  **Functional Core:** Pure functions are used for rendering, data
      *     processing, and business logic. These functions receive state and data
      *     as input and produce UI elements or new data as output. This separation
      *     makes the logic more predictable, reusable, and easier to test.
@@ -244,6 +248,8 @@
           previewDiv: document.getElementById('preview'),
           toggleBtn: document.getElementById('toggle-mode'),
           clearAllBtn: document.getElementById('clear-all-btn'),
+          uploadBtn: document.getElementById('upload-btn'), // New
+          fileInput: document.getElementById('file-input'), // New
           toolbar: document.getElementById('toolbar'),
         };
 
@@ -275,6 +281,8 @@
       _addEventListeners() {
         document.body.addEventListener('paste', e => this.handlePaste(e));
         this.dom.clearAllBtn.addEventListener('click', () => this.handleClearAll());
+        this.dom.uploadBtn.addEventListener('click', () => this.dom.fileInput.click()); // New: Trigger hidden input
+        this.dom.fileInput.addEventListener('change', e => this.handleUploadFiles(e)); // New: Handle file selection
         this.dom.toggleBtn.addEventListener('click', () => this.handleToggleMode());
         document.addEventListener('click', e => this.handleDocumentClick(e));
       }
@@ -289,6 +297,8 @@
           onDeleteFile: this.handleDeleteFile.bind(this),
           onCopyFile: this.handleCopyFile.bind(this),
           onDownloadFile: this.handleDownloadFile.bind(this),
+          onRenameFile: this.handleRenameFile.bind(this), // New
+          onChangeMimeType: this.handleChangeMimeType.bind(this), // New
           onToggleContextMenu: this.handleToggleContextMenu.bind(this),
           onTextChange: this.handleTextChange.bind(this),
         });
@@ -307,12 +317,27 @@
         this.render();
       }
 
+      async handleUploadFiles(e) {
+        const files = e.target.files;
+        if (files.length === 0) return;
+
+        const newFiles = await processPastedFiles(files, this.state.opfsRoot); // Re-use existing logic
+        if (newFiles.length === 0) return;
+
+        this.state.files = [...this.state.files, ...newFiles];
+        if (!this.state.selectedFileId) {
+          this.state.selectedFileId = newFiles[0].id;
+        }
+        this.render();
+        this.dom.fileInput.value = ''; // Clear input so same file can be uploaded again
+      }
+
       async handleClearAll() {
         if (!confirm('Are you sure you want to delete ALL persisted files? This cannot be undone.')) return;
         if (!this.state.opfsRoot) return;
 
-        await clearAllOpfsFiles(this.state.opfsRoot);
         this.state.files.forEach(f => URL.revokeObjectURL(f.url)); // Cleanup URLs
+        await clearAllOpfsFiles(this.state.opfsRoot);
 
         this.state.files = [];
         this.state.selectedFileId = null;
@@ -359,6 +384,93 @@
         const fileToDownload = findFileById(this.state.files, fileId);
         if (!fileToDownload) return;
         await downloadFile(fileToDownload);
+      }
+
+      async handleRenameFile(fileId) {
+        const fileToRename = findFileById(this.state.files, fileId);
+        if (!fileToRename) return;
+
+        const newName = prompt(`Enter new name for "${fileToRename.name}":`, fileToRename.name);
+        if (!newName || newName.trim() === '' || newName === fileToRename.name) return;
+
+        const trimmedNewName = newName.trim();
+
+        // Check for name conflict (simple check, OPFS will overwrite if handle is created)
+        if (this.state.files.some(f => f.name === trimmedNewName && f.id !== fileId)) {
+          alert(`A file named "${trimmedNewName}" already exists. Please choose a different name.`);
+          return;
+        }
+
+        try {
+          const oldHandle = fileToRename.handle;
+          const contentBlob = await getFileBlob(fileToRename); // Get current content
+
+          // 1. Create new file handle with new name
+          const newHandle = await this.state.opfsRoot.getFileHandle(trimmedNewName, { create: true });
+          await saveFileToOpfs(newHandle, contentBlob); // Save content to new file
+
+          // 2. Delete old file
+          if (oldHandle) {
+            await deleteFileFromOpfs(this.state.opfsRoot, oldHandle.name);
+          }
+
+          // 3. Update file object in state
+          fileToRename.name = trimmedNewName;
+          fileToRename.handle = newHandle; // Update handle reference
+          URL.revokeObjectURL(fileToRename.url); // Revoke old URL
+          fileToRename.url = URL.createObjectURL(contentBlob); // Create new URL
+
+          this.render();
+          alert(`File "${fileToRename.name}" renamed to "${trimmedNewName}".`);
+        } catch (e) {
+          console.error('Error renaming file:', e);
+          alert(`Failed to rename "${fileToRename.name}". Check console for details.`);
+        }
+      }
+
+      async handleChangeMimeType(fileId) {
+        const fileToChange = findFileById(this.state.files, fileId);
+        if (!fileToChange) return;
+
+        const newType = prompt(`Enter new MIME type for "${fileToChange.name}" (e.g., text/plain, image/png, application/json):`, fileToChange.type);
+        if (!newType || newType.trim() === '' || newType === fileToChange.type) return;
+
+        const trimmedNewType = newType.trim();
+
+        // Update file object state
+        fileToChange.type = trimmedNewType;
+
+        // If changing to/from text, re-evaluate the 'text' property
+        const isNewTypeText = trimmedNewType.startsWith('text/');
+        const wasOldTypeText = fileToChange.text !== null;
+
+        if (isNewTypeText && !wasOldTypeText) {
+          // If new type is text and it wasn't previously loaded as text, try to load it
+          try {
+            const fileData = await getFileBlob(fileToChange); // Get the current blob
+            fileToChange.text = await fileData.text();
+          } catch (e) {
+            console.warn(`Could not interpret file as text after changing type to ${trimmedNewType}:`, e);
+            fileToChange.text = null; // Clear text if it fails
+          }
+        } else if (!isNewTypeText && wasOldTypeText) {
+          // If new type is not text, clear the text property to rely on originalBlob/handle
+          fileToChange.text = null;
+        }
+
+        // Re-create URL with potentially new type (though URL.createObjectURL doesn't strictly care about type)
+        // This ensures the viewer re-renders with the new type.
+        const currentBlob = await getFileBlob(fileToChange);
+        URL.revokeObjectURL(fileToChange.url);
+        fileToChange.url = URL.createObjectURL(currentBlob);
+
+        // Persist change to OPFS (this will save the current content with the new type metadata if it's a text file)
+        if (fileToChange.handle) {
+          await saveFileToOpfs(fileToChange.handle, currentBlob);
+        }
+
+        this.render();
+        alert(`MIME type of "${fileToChange.name}" changed to "${trimmedNewType}".`);
       }
 
       handleToggleContextMenu(fileId) {
@@ -454,10 +566,10 @@
       return files;
     }
 
-    /** Processes pasted files, saves them to OPFS, and returns file objects. */
-    async function processPastedFiles(pastedFiles, opfsRoot) {
+    /** Processes pasted/uploaded files, saves them to OPFS, and returns file objects. */
+    async function processPastedFiles(inputFiles, opfsRoot) {
       const newFileObjects = [];
-      for (const file of pastedFiles) {
+      for (const file of inputFiles) {
         try {
           const handle = opfsRoot ? await opfsRoot.getFileHandle(file.name, { create: true }) : null;
           if (handle) {
@@ -465,7 +577,7 @@
           }
           newFileObjects.push(createFileObject(file, handle));
         } catch (e) {
-          console.error(`Failed to save pasted file ${file.name} to OPFS:`, e);
+          console.error(`Failed to save pasted/uploaded file ${file.name} to OPFS:`, e);
         }
       }
       return newFileObjects;
@@ -579,14 +691,18 @@
       menu.innerHTML = `
         <li data-action="copy">Copy</li>
         <li data-action="download">Download</li>
+        <li data-action="rename">Rename</li>       <!-- New -->
+        <li data-action="change-type">Change Type</li> <!-- New -->
         <li data-action="delete">Delete</li>
       `;
       menu.onclick = (e) => {
         e.stopPropagation();
         const action = e.target.dataset.action;
         if (action === 'copy') handlers.onCopyFile(file.id);
-        if (action === 'download') handlers.onDownloadFile(file.id);
-        if (action === 'delete') handlers.onDeleteFile(file.id);
+        else if (action === 'download') handlers.onDownloadFile(file.id);
+        else if (action === 'rename') handlers.onRenameFile(file.id); // New
+        else if (action === 'change-type') handlers.onChangeMimeType(file.id); // New
+        else if (action === 'delete') handlers.onDeleteFile(file.id);
         handlers.onToggleContextMenu(null); // Close menu after action
       };
 
@@ -618,8 +734,13 @@
 
       // Lazy load text content if needed for edit mode or markdown preview
       if (isText && selectedFile.text === null && selectedFile.handle) {
-        const fileData = await selectedFile.handle.getFile();
-        selectedFile.text = await fileData.text();
+        try {
+          const fileData = await selectedFile.handle.getFile();
+          selectedFile.text = await fileData.text();
+        } catch (e) {
+          console.error(`Failed to load text content for ${selectedFile.name}:`, e);
+          selectedFile.text = `Error loading text content: ${e.message}`;
+        }
       }
 
       if (isText && state.mode === 'edit') {
@@ -659,7 +780,16 @@
       if (file.type === 'text/markdown') {
         const html = marked.parse(file.text || '');
         parentEl.innerHTML = `<div style="padding:1rem; overflow:auto; height:100%;">${html}</div>`;
-      } else {
+      } else if (file.type.startsWith('text/')) {
+        // Generic text file
+        const pre = document.createElement('pre');
+        pre.style.padding = '1rem';
+        pre.style.overflow = 'auto';
+        pre.style.height = '100%';
+        pre.textContent = file.text || '';
+        parentEl.appendChild(pre);
+      }
+      else {
         const obj = document.createElement('object');
         obj.type = file.type;
         obj.data = file.url;
