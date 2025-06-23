@@ -1,5 +1,6 @@
 [Add](https://github.dev/chuanqisun/tools) · [Repo](https://github.com/chuanqisun/tools/)
 - [Assembly theory](./assembly-theory/)
+- [Clipboard++](./clipboard)
 - [Dot grid field](./dot-grid-field/)
 - [File → URL](https://chuanqisun.github.io/fileurl/)
 - [GitHub Issue Graph](https://chuanqisun.github.io/issue-graph/)
