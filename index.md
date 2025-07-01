@@ -1,12 +1,11 @@
 [Add](https://github.dev/chuanqisun/tools) · [Repo](https://github.com/chuanqisun/tools/)
-- [Assembly theory](./assembly-theory/)
-- [Clipboard++](./clipboard)
-- [Dot grid field](./dot-grid-field/)
+
+## Tools
+
 - [File → URL](https://chuanqisun.github.io/fileurl/)
 - [GitHub Issue Graph](https://chuanqisun.github.io/issue-graph/)
 - [Keyboard bounce tester](./keyboard-bounce-tester/)
 - [Markdown preview](./markdown-preview)
-- [Media Lab Game of Life](./media-lab-game-of-life)
 - [JSONL viewer](./jsonl-viewer)
 - [JSON → TypeScript](./json-to-typescript)
 - [JSON ↔ YAML](./json-to-yaml)
@@ -14,4 +13,12 @@
 - [Plotter/TTF](./plotters/ttf.html)
 - [Plotter/Hershey+JSON](./plotters/hershey-json.html)
 - [Tax estimator](https://chuanqisun.github.io/tax/)
+
+## Experiments
+
+- [Assembly theory](./assembly-theory/)
+- [Clipboard++](./clipboard)
+- [Dot grid field](./dot-grid-field/)
+- [Media Lab Game of Life](./media-lab-game-of-life)
+- [Wiki search](./wiki-search/)
 - [Voxel intersection](./voxel-intersection/)

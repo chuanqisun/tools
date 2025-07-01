@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Wikipedia Search with Pagination (RxJS)</title>
+    <style>
+      body { font-family: Arial, sans-serif; max-width: 800px; margin: 2em auto; }
+      h1 { text-align: center; }
+      #searchForm { text-align: center; margin-bottom: 1em; }
+      input[type="text"] { width: 70%; padding: .5em; font-size: 1em; }
+      button { padding: .5em 1em; font-size: 1em; margin: 0 .2em; }
+      .result { border-bottom: 1px solid #ddd; padding: .5em 0; }
+      .result a { text-decoration: none; color: #1a0dab; font-weight: bold; }
+      .snippet { color: #444; }
+      #pagination { text-align: center; margin: 1em 0; }
+    </style>
+  </head>
+  <body>
+    <h1>Wikipedia Search (Pagination)</h1>
+    <div id="searchForm">
+      <input id="query" type="text" placeholder="Enter search term…" autocomplete="off" />
+      <button id="searchBtn">Search</button>
+    </div>
+    <div id="results"></div>
+    <div id="pagination">
+      <button id="prevBtn" disabled>« Prev</button>
+      <span id="pageInfo"></span>
+      <button id="nextBtn" disabled>Next »</button>
+    </div>
+
+    <script type="module">
+      import { fromEvent, of, EMPTY } from "https://esm.sh/rxjs";
+      import { debounceTime, map, filter, distinctUntilChanged, switchMap, catchError } from "https://esm.sh/rxjs/operators";
+
+      const PAGE_SIZE = 10;
+
+      // UI refs
+      const queryInput = document.getElementById("query");
+      const prevBtn = document.getElementById("prevBtn");
+      const nextBtn = document.getElementById("nextBtn");
+      const resultsDiv = document.getElementById("results");
+      const pageInfo = document.getElementById("pageInfo");
+
+      let currentQuery = "";
+      let currentPage = 1;
+      let totalPages = 1;
+
+      // Helpers (same as before)
+      function render({ query, page, totalHits, items }) {
+        // update stored state
+        currentQuery = query;
+        currentPage = page;
+        totalPages = Math.ceil(totalHits / PAGE_SIZE) || 1;
+
+        // render results
+        if (items.length === 0) {
+          resultsDiv.innerHTML = "<p>No results found.</p>";
+        } else {
+          resultsDiv.innerHTML = items
+            .map(
+              (i) => `
+        <div class="result">
+          <a href="https://en.wikipedia.org/wiki/${encodeURIComponent(i.title)}" target="_blank">
+            ${i.title}
+          </a>
+          <div class="snippet">${i.snippet}…</div>
+        </div>
+      `
+            )
+            .join("");
+        }
+
+        pageInfo.textContent = `Page ${page} of ${totalPages} (${totalHits} results)`;
+        prevBtn.disabled = page <= 1;
+        nextBtn.disabled = page >= totalPages;
+      }
+
+      function renderError(err) {
+        resultsDiv.innerHTML = `<p style="color:red;">Error: ${err.message}</p>`;
+        pageInfo.textContent = "";
+        prevBtn.disabled = true;
+        nextBtn.disabled = true;
+      }
+
+      function fetchPage(query, page) {
+        const offset = (page - 1) * PAGE_SIZE;
+        const params = new URLSearchParams({
+          action: "query",
+          list: "search",
+          srsearch: query,
+          format: "json",
+          origin: "*",
+          sroffset: offset,
+          srlimit: PAGE_SIZE,
+        });
+        return of(null).pipe(
+          switchMap(() => fetch(`https://en.wikipedia.org/w/api.php?${params}`)),
+          switchMap((r) => (r.ok ? r.json() : Promise.reject(new Error(r.statusText)))),
+          map((data) => ({
+            query,
+            page,
+            totalHits: data.query.searchinfo.totalhits,
+            items: data.query.search.map((i) => ({
+              title: i.title,
+              snippet: i.snippet,
+            })),
+          }))
+        );
+      }
+
+      // 1) “Search as you type” stream:
+      const typeSearch$ = fromEvent(queryInput, "input").pipe(
+        map((e) => e.target.value.trim()),
+        debounceTime(200),
+        filter((text) => text.length > 0),
+        distinctUntilChanged(),
+        // whenever the query text changes we reset back to page 1
+        switchMap((query) =>
+          fetchPage(query, 1).pipe(
+            catchError((err) => {
+              renderError(err);
+              return EMPTY;
+            })
+          )
+        )
+      );
+
+      // 2) Prev/Next pagination (keep the same query):
+      const prev$ = fromEvent(prevBtn, "click").pipe(
+        filter((_) => currentQuery.length > 0 && currentPage > 1),
+        switchMap((_) =>
+          fetchPage(currentQuery, currentPage - 1).pipe(
+            catchError((err) => {
+              renderError(err);
+              return EMPTY;
+            })
+          )
+        )
+      );
+
+      const next$ = fromEvent(nextBtn, "click").pipe(
+        filter((_) => currentQuery.length > 0 && currentPage < totalPages),
+        switchMap((_) =>
+          fetchPage(currentQuery, currentPage + 1).pipe(
+            catchError((err) => {
+              renderError(err);
+              return EMPTY;
+            })
+          )
+        )
+      );
+
+      // 3) Merge everything and render on each emission
+      typeSearch$.subscribe(render);
+      prev$.subscribe(render);
+      next$.subscribe(render);
+    </script>
+  </body>
+</html>
