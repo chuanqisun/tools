@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Box with Z-Order and Joints - Web Component</title>
+    <style>
+      /* Global styles for the body, not specific to the component */
+      body {
+        font-family: sans-serif;
+        margin: 20px;
+        background-color: #f9f9f9;
+        color: #333;
+      }
+
+      h1 {
+        color: #0056b3;
+      }
+
+      /* Styles for the custom element itself, applied to :host in its shadow DOM */
+      ascii-box {
+        border: 1px solid #ccc;
+        padding: 10px;
+        background-color: #fff;
+        box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
+        margin-bottom: 20px; /* Add some space between instances */
+        display: block; /* Ensure it takes up its own line */
+      }
+    </style>
+  </head>
+  <body>
+    <h1>ASCII Box Web Component Demo</h1>
+
+    <p>Use the <code>&lt;ascii-box&gt;</code> tag with <code>w</code>, <code>h</code>, and <code>d</code> attributes to draw boxes of different sizes.</p>
+
+    <h2>Examples:</h2>
+
+    <h3>Standard Box (6x3x4)</h3>
+    <ascii-box w="6" h="3" d="4"></ascii-box>
+
+    <h3>Larger Box (10x5x7)</h3>
+    <ascii-box w="10" h="5" d="7"></ascii-box>
+
+    <h3>Cube (4x4x4)</h3>
+    <ascii-box w="4" h="4" d="4"></ascii-box>
+
+    <h3>Smallest Possible Box (1x1x1)</h3>
+    <ascii-box w="1" h="1" d="1"></ascii-box>
+
+    <h3>Flat Box (5x2x0) - No Z-dimension</h3>
+    <ascii-box w="5" h="2" d="0"></ascii-box>
+
+    <h3>Flat Box (0x5x2) - No X-dimension</h3>
+    <ascii-box w="0" h="5" d="2"></ascii-box>
+
+    <h3>Empty Box (0x0x0)</h3>
+    <ascii-box w="0" h="0" d="0"></ascii-box>
+
+    <script>
+      class AsciiBox extends HTMLElement {
+        constructor() {
+          super();
+          // Attach a shadow DOM to encapsulate styles and content
+          this.attachShadow({ mode: "open" });
+
+          // Internal state for dimensions
+          this._w = 0;
+          this._h = 0;
+          this._d = 0;
+
+          // Create a template for the component's structure and styles
+          const template = document.createElement("template");
+          template.innerHTML = `
+          <style>
+            /* Styles specific to the component, scoped to its shadow DOM */
+            :host {
+              /* These styles are applied to the <ascii-box> element itself */
+              font-family: monospace;
+              white-space: pre;
+              line-height: 1;
+              display: block; /* Ensure it behaves like a block element */
+            }
+            pre {
+              margin: 0; /* Remove default pre margin */
+            }
+          </style>
+          <pre id="canvas"></pre>
+        `;
+          this.shadowRoot.appendChild(template.content.cloneNode(true));
+          this._canvasElement = this.shadowRoot.getElementById("canvas");
+        }
+
+        // Define which attributes to observe for changes
+        static get observedAttributes() {
+          return ["w", "h", "d"];
+        }
+
+        /**
+         * Called when an observed attribute is added, removed, or changed.
+         * @param {string} name - The name of the attribute.
+         * @param {string} oldValue - The old attribute value.
+         * @param {string} newValue - The new attribute value.
+         */
+        attributeChangedCallback(name, oldValue, newValue) {
+          if (oldValue === newValue) return; // No change
+
+          const numValue = parseInt(newValue, 10);
+          // Basic validation: must be a non-negative integer
+          if (isNaN(numValue) || numValue < 0) {
+            console.warn(`AsciiBox: Invalid value for attribute '${name}': '${newValue}'. Must be a non-negative integer.`);
+            return; // Do not update or render with invalid value
+          }
+
+          switch (name) {
+            case "w":
+              this._w = numValue;
+              break;
+            case "h":
+              this._h = numValue;
+              break;
+            case "d":
+              this._d = numValue;
+              break;
+          }
+          this._render(); // Re-render the box with the new dimensions
+        }
+
+        /**
+         * Called when the element is first connected to the document's DOM.
+         */
+        connectedCallback() {
+          // Set initial values from attributes. This handles cases where attributes
+          // are set directly in HTML before the element is connected.
+          this._w = parseInt(this.getAttribute("w") || "0", 10);
+          this._h = parseInt(this.getAttribute("h") || "0", 10);
+          this._d = parseInt(this.getAttribute("d") || "0", 10);
+          this._render(); // Perform the initial render
+        }
+
+        // -------------------------------------------------------
+        // Private Helper Methods for Drawing Logic
+        // -------------------------------------------------------
+
+        /**
+         * Oblique Projection (45° planometric / cavalier)
+         * Maps a 3D point (x,y,z) to a 2D projected point (px,py).
+         * px = x - y
+         * py = y - z
+         * @param {object} pt - The 3D point {x, y, z}.
+         * @returns {object} The 2D projected point {x, y}.
+         */
+        _project(pt) {
+          return {
+            x: pt.x - pt.y,
+            y: pt.y - pt.z,
+          };
+        }
+
+        /**
+         * Builds the 8 corners and 12 edges of an axis-aligned box.
+         * @param {number} w - Width of the box.
+         * @param {number} h - Height of the box.
+         * @param {number} d - Depth of the box.
+         * @returns {object} An object containing arrays of corners (C) and edges (E).
+         */
+        _makeBox(w, h, d) {
+          const C = []; // Corners (8 points)
+          // Generate all 8 corners based on dimensions
+          for (let xi = 0; xi < 2; xi++) {
+            for (let yi = 0; yi < 2; yi++) {
+              for (let zi = 0; zi < 2; zi++) {
+                C.push({ x: xi * w, y: yi * h, z: zi * d });
+              }
+            }
+          }
+
+          // Helper to get corner index from (x,y,z) binary flags
+          // e.g., idx(1,0,1) means x=w, y=0, z=d
+          const idx = (xi, yi, zi) => (xi << 2) | (yi << 1) | zi;
+          const E = []; // Edges (12 lines)
+
+          // Helper function to add an edge between two corner indices
+          const addEdge = (a, b) => {
+            E.push([C[a], C[b]]);
+          };
+
+          // Add all 12 edges:
+          // Vertical (z-axis parallel) edges
+          addEdge(idx(0, 0, 0), idx(0, 0, 1));
+          addEdge(idx(1, 0, 0), idx(1, 0, 1));
+          addEdge(idx(0, 1, 0), idx(0, 1, 1));
+          addEdge(idx(1, 1, 0), idx(1, 1, 1));
+          // X-axis parallel edges (at bottom/top z-planes)
+          addEdge(idx(0, 0, 0), idx(1, 0, 0));
+          addEdge(idx(0, 1, 0), idx(1, 1, 0));
+          addEdge(idx(0, 0, 1), idx(1, 0, 1));
+          addEdge(idx(0, 1, 1), idx(1, 1, 1));
+          // Y-axis parallel edges (at front/back y-planes)
+          addEdge(idx(0, 0, 0), idx(0, 1, 0));
+          addEdge(idx(1, 0, 0), idx(1, 1, 0));
+          addEdge(idx(0, 0, 1), idx(0, 1, 1));
+          addEdge(idx(1, 0, 1), idx(1, 1, 1));
+
+          return { C: C, E: E };
+        }
+
+        /**
+         * Draws a line segment on the grid using ASCII characters, respecting depth.
+         * @param {Array<Array<string>>} grid - The 2D character grid.
+         * @param {Array<Array<number>>} depthGrid - The 2D depth buffer.
+         * @param {number} x0 - Start X coordinate on the grid.
+         * @param {number} y0 - Start Y coordinate on the grid.
+         * @param {number} x1 - End X coordinate on the grid.
+         * @param {number} y1 - End Y coordinate on the grid.
+         * @param {number} depth - The depth value of the line (higher means closer).
+         */
+        _drawLine(grid, depthGrid, x0, y0, x1, y1, depth) {
+          const dx = x1 - x0;
+          const dy = y1 - y0;
+          const Wg = grid[0].length;
+          const Hg = grid.length;
+
+          // Horizontal line
+          if (y0 === y1) {
+            const y = y0;
+            const xs = Math.min(x0, x1);
+            const xe = Math.max(x0, x1);
+            for (let x = xs; x <= xe; x++) {
+              if (y >= 0 && y < Hg && x >= 0 && x < Wg && depth >= depthGrid[y][x]) {
+                grid[y][x] = "─";
+                depthGrid[y][x] = depth;
+              }
+            }
+          }
+          // Vertical line
+          else if (x0 === x1) {
+            const x = x0;
+            const ys = Math.min(y0, y1);
+            const ye = Math.max(y0, y1);
+            for (let y = ys; y <= ye; y++) {
+              if (y >= 0 && y < Hg && x >= 0 && x < Wg && depth >= depthGrid[y][x]) {
+                grid[y][x] = "│";
+                depthGrid[y][x] = depth;
+              }
+            }
+          }
+          // 45° diagonal (only '╱' character supported)
+          else if (Math.abs(dx) === Math.abs(dy)) {
+            const steps = Math.abs(dx);
+            const sx = dx > 0 ? 1 : -1;
+            const sy = dy > 0 ? 1 : -1;
+            for (let i = 0; i <= steps; i++) {
+              const x = x0 + i * sx;
+              const y = y0 + i * sy;
+              if (y >= 0 && y < Hg && x >= 0 && x < Wg && depth >= depthGrid[y][x]) {
+                grid[y][x] = "╱";
+                depthGrid[y][x] = depth;
+              }
+            }
+          }
+        }
+
+        /**
+         * Renders the 3D box into an ASCII art string with Z-order sorting and joint markers.
+         * @param {number} w - Width of the box.
+         * @param {number} h - Height of the box.
+         * @param {number} d - Depth of the box.
+         * @returns {string} The ASCII art representation of the box.
+         */
+        _renderBox(w, h, d) {
+          // Handle zero dimensions gracefully
+          if (w === 0 && h === 0 && d === 0) {
+            return "(Empty Box)";
+          }
+
+          // 1) Build corners and edges in 3D
+          const box = this._makeBox(w, h, d);
+          const corners3 = box.C;
+          const edges3 = box.E;
+
+          // 2) Sort edges by depth (Painter’s algorithm)
+          // Sort from farthest to nearest. Farthest edges have smaller sum of coordinates.
+          // This means edges[0] is farthest, edges[last] is nearest.
+          edges3.sort((eA, eB) => {
+            const sumA = eA[0].x + eA[0].y + eA[0].z + eA[1].x + eA[1].y + eA[1].z;
+            const sumB = eB[0].x + eB[0].y + eB[0].z + eB[1].x + eB[1].y + eB[1].z;
+            return sumA - sumB; // Sort ascending: farthest to nearest
+          });
+
+          // 3) Project edge endpoints and determine grid bounds
+          const projEnds = edges3.map((e) => [this._project(e[0]), this._project(e[1])]);
+          const projCorners = corners3.map(this._project);
+
+          let minX = Infinity,
+            minY = Infinity,
+            maxX = -Infinity,
+            maxY = -Infinity;
+
+          // Calculate bounds based on all projected points (edges and corners)
+          [...projEnds.flat(), ...projCorners].forEach((pt) => {
+            if (pt.x < minX) minX = pt.x;
+            if (pt.y < minY) minY = pt.y;
+            if (pt.x > maxX) maxX = pt.x;
+            if (pt.y > maxY) maxY = pt.y;
+          });
+
+          // If no points were generated (e.g., all dimensions are zero or very small),
+          // minX will remain Infinity.
+          if (minX === Infinity) {
+            return "(No visible points)";
+          }
+
+          // Calculate grid dimensions, ensuring a minimum size of 1x1
+          let Wg = Math.max(1, maxX - minX + 1);
+          let Hg = Math.max(1, maxY - minY + 1);
+
+          // Initialize grid and depth buffer
+          const grid = Array.from({ length: Hg }, () => Array(Wg).fill(" "));
+          const depthGrid = Array.from({ length: Hg }, () => Array(Wg).fill(-Infinity));
+
+          // 4) Draw each edge, from far to near
+          // Since edges3 is sorted farthest to nearest, `idx` will be small for far edges
+          // and large for near edges. We want nearer edges to overwrite farther ones,
+          // so we use `idx` directly as the depth value (higher `idx` = higher depth = closer).
+          projEnds.forEach((pq, idx) => {
+            const P = pq[0],
+              Q = pq[1];
+            const x0 = P.x - minX,
+              y0 = P.y - minY;
+            const x1 = Q.x - minX,
+              y1 = Q.y - minY;
+            this._drawLine(grid, depthGrid, x0, y0, x1, y1, idx);
+          });
+
+          // 5) Overlay "·" at each true 3D corner (joint)
+          projCorners.forEach((pt) => {
+            const gx = pt.x - minX;
+            const gy = pt.y - minY;
+            // Ensure the projected point is within the grid bounds
+            if (gx >= 0 && gx < Wg && gy >= 0 && gy < Hg) {
+              grid[gy][gx] = "·"; // Overwrite any existing character with '·'
+            }
+          });
+
+          // Convert the grid to a single string
+          return grid.map((row) => row.join("")).join("\n");
+        }
+
+        /**
+         * Main rendering method for the component. Updates the content of the <pre> tag.
+         */
+        _render() {
+          if (!this._canvasElement) {
+            console.error("AsciiBox: Canvas element not found in shadow DOM.");
+            return;
+          }
+
+          const boxArt = this._renderBox(this._w, this._h, this._d);
+          this._canvasElement.textContent = boxArt + `\n\nBox size: ${this._w}×${this._h}×${this._d} (x×y×z)`;
+        }
+      }
+
+      // Register the custom element with the browser
+      customElements.define("ascii-box", AsciiBox);
+    </script>
+  </body>
+</html>

@@ -16,6 +16,7 @@
 
 ## Experiments
 
+- [ASCII Box](./ascii-box/)
 - [Assembly theory](./assembly-theory/)
 - [Clipboard++](./clipboard)
 - [Dot grid field](./dot-grid-field/)
