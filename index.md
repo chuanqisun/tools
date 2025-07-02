@@ -20,6 +20,7 @@
 - [Assembly theory](./assembly-theory/)
 - [Clipboard++](./clipboard)
 - [Dot grid field](./dot-grid-field/)
+- [Dream grid](./dream-grid/)
 - [Media Lab Game of Life](./media-lab-game-of-life)
 - [Wiki search](./wiki-search/)
 - [Voxel intersection](./voxel-intersection/)
