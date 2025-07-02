@@ -134,13 +134,12 @@
             const dc = (index % 3) - 1;
             if (dr === 0 && dc === 0) return false; // Skip center
 
-            const neighborRow = row + dr;
-            const neighborCol = col + dc;
+            // Use wrap around for neighbor coordinates
+            const neighborRow = ((row + dr) % ROWS + ROWS) % ROWS;
+            const neighborCol = ((col + dc) % COLS + COLS) % COLS;
 
             // Only count if neighbor has content AND is idle
-            return (
-              n.trim() && neighborRow >= 0 && neighborRow < ROWS && neighborCol >= 0 && neighborCol < COLS && cellState[neighborRow][neighborCol] === "idle"
-            );
+            return n.trim() && cellState[neighborRow][neighborCol] === "idle";
           }).length;
 
           if (contentfulNeighbors >= 3) {
@@ -461,14 +460,15 @@ Continue in the most strange and imaginative way. Respond in Title case a few wo
               eligible.push({ row: r, col: c });
               continue;
             }
+            // Check adjacent cells with wrap around
             const siblings = [
-              [r - 1, c],
-              [r, c + 1],
-              [r + 1, c],
-              [r, c - 1],
+              [((r - 1) % ROWS + ROWS) % ROWS, c],
+              [r, ((c + 1) % COLS + COLS) % COLS],
+              [((r + 1) % ROWS + ROWS) % ROWS, c],
+              [r, ((c - 1) % COLS + COLS) % COLS],
             ];
             for (const [rr, cc] of siblings) {
-              if (rr >= 0 && rr < ROWS && cc >= 0 && cc < COLS && grid[rr][cc]) {
+              if (grid[rr][cc]) {
                 eligible.push({ row: r, col: c });
                 break;
               }
@@ -483,11 +483,10 @@ Continue in the most strange and imaginative way. Respond in Title case a few wo
         for (let dr = -1; dr <= 1; dr++) {
           for (let dc = -1; dc <= 1; dc++) {
             if (dr === 0 && dc === 0) continue;
-            const rr = row + dr,
-              cc = col + dc;
-            if (rr >= 0 && rr < ROWS && cc >= 0 && cc < COLS) {
-              neighbors.push(grid[rr][cc]);
-            }
+            // Wrap around using modulo arithmetic
+            const rr = ((row + dr) % ROWS + ROWS) % ROWS;
+            const cc = ((col + dc) % COLS + COLS) % COLS;
+            neighbors.push(grid[rr][cc]);
           }
         }
         return neighbors;
