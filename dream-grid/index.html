@@ -58,7 +58,7 @@
     </div>
     <div id="detail">
       <div id="loop-controls">
-        <button id="start-loop-btn">Start Continuous Update</button>
+        <button id="start-loop-btn">Start dreaming</button>
         <button id="stop-loop-btn" disabled>Stop</button>
         <span id="loop-status"></span>
       </div>
@@ -126,9 +126,70 @@
         localStorage.setItem("dream:openaiApiKey", apiKeyInput.value);
       });
 
-      latestResponse$.pipe(distinctUntilChanged(), sampleTime(500)).subscribe((response) => {
-        ttsNode.queue(response);
-        console.log("Latest response:", response);
+      latestResponse$.pipe(distinctUntilChanged(), sampleTime(500), takeUntil(stopLoop$)).subscribe(async (response) => {
+        const abortController = new AbortController();
+
+        // Set up cancellation when loop stops
+        const stopSubscription = stopLoop$.subscribe(() => {
+          abortController.abort();
+        });
+
+        try {
+          const openai = new OpenAI({
+            apiKey: savedApiKey || "",
+            dangerouslyAllowBrowser: true,
+          });
+
+          const mp3 = await openai.audio.speech.create(
+            {
+              model: "gpt-4o-mini-tts",
+              voice: ["alloy", "ash", "ballad", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer"][Math.floor(Math.random() * 10)],
+              input: response,
+              instructions: "Whisper in a gentle dream-like voice",
+            },
+            {
+              signal: abortController.signal,
+            }
+          );
+
+          // Check if aborted before proceeding
+          if (abortController.signal.aborted) {
+            stopSubscription.unsubscribe();
+            return;
+          }
+
+          const audioBlob = new Blob([await mp3.arrayBuffer()], { type: "audio/mpeg" });
+          const audioUrl = URL.createObjectURL(audioBlob);
+
+          const audio = new Audio(audioUrl);
+
+          // Handle abort during audio playback
+          const abortHandler = () => {
+            audio.pause();
+            audio.currentTime = 0;
+            URL.revokeObjectURL(audioUrl);
+          };
+
+          abortController.signal.addEventListener("abort", abortHandler);
+
+          await audio.play();
+
+          // Clean up the object URL after playing
+          audio.addEventListener("ended", () => {
+            URL.revokeObjectURL(audioUrl);
+            abortController.signal.removeEventListener("abort", abortHandler);
+          });
+
+          console.log("Latest response:", response);
+        } catch (error) {
+          if (error.name === "AbortError" || abortController.signal.aborted) {
+            console.log("TTS cancelled");
+          } else {
+            console.error("TTS error:", error);
+          }
+        } finally {
+          stopSubscription.unsubscribe();
+        }
       });
 
       // --- RxJS Flow Control ---
@@ -190,8 +251,8 @@
             const neighborText = neighbors.filter((n) => n.trim()).join(" ");
             const prompt = neighborText
               ? `
-In your mind you have ${neighborText}. What happened next?
-Continue in the most strange and imaginative way. Respond in Title case one word. Do NOT repeat existing words or categories.
+In your mind you have ${neighborText}.
+What happened next? Respond in Title case one word. Do NOT repeat existing words or categories.
 `.trim()
               : `You had a dream. Summarize the dream into a short phrase in Title case, 3 word max.`;
 
