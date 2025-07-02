@@ -135,8 +135,8 @@
             if (dr === 0 && dc === 0) return false; // Skip center
 
             // Use wrap around for neighbor coordinates
-            const neighborRow = ((row + dr) % ROWS + ROWS) % ROWS;
-            const neighborCol = ((col + dc) % COLS + COLS) % COLS;
+            const neighborRow = (((row + dr) % ROWS) + ROWS) % ROWS;
+            const neighborCol = (((col + dc) % COLS) + COLS) % COLS;
 
             // Only count if neighbor has content AND is idle
             return n.trim() && cellState[neighborRow][neighborCol] === "idle";
@@ -180,7 +180,8 @@
             const prompt = neighborText
               ? `
 In your mind you have ${neighborText}. What happened next?
-Continue in the most strange and imaginative way. Respond in Title case a few words max`.trim()
+Continue in the most strange and imaginative way. Respond in Title case one word. Do NOT repeat existing words.
+`.trim()
               : `You had a dream. Summarize the dream into a short phrase in Title case, 3 word max.`;
 
             const apiCall$ = new Observable((subscriber) => {
@@ -462,10 +463,10 @@ Continue in the most strange and imaginative way. Respond in Title case a few wo
             }
             // Check adjacent cells with wrap around
             const siblings = [
-              [((r - 1) % ROWS + ROWS) % ROWS, c],
-              [r, ((c + 1) % COLS + COLS) % COLS],
-              [((r + 1) % ROWS + ROWS) % ROWS, c],
-              [r, ((c - 1) % COLS + COLS) % COLS],
+              [(((r - 1) % ROWS) + ROWS) % ROWS, c],
+              [r, (((c + 1) % COLS) + COLS) % COLS],
+              [(((r + 1) % ROWS) + ROWS) % ROWS, c],
+              [r, (((c - 1) % COLS) + COLS) % COLS],
             ];
             for (const [rr, cc] of siblings) {
               if (grid[rr][cc]) {
@@ -484,8 +485,8 @@ Continue in the most strange and imaginative way. Respond in Title case a few wo
           for (let dc = -1; dc <= 1; dc++) {
             if (dr === 0 && dc === 0) continue;
             // Wrap around using modulo arithmetic
-            const rr = ((row + dr) % ROWS + ROWS) % ROWS;
-            const cc = ((col + dc) % COLS + COLS) % COLS;
+            const rr = (((row + dr) % ROWS) + ROWS) % ROWS;
+            const cc = (((col + dc) % COLS) + COLS) % COLS;
             neighbors.push(grid[rr][cc]);
           }
         }
