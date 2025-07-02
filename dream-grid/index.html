@@ -76,6 +76,13 @@
         <label>OpenAI API Key<br /></label>
         <input type="password" id="openai-api-key" />
       </div>
+      <br />
+      <div>
+        <h4>Recent Dreams (Latest 10)</h4>
+        <div id="dream-log" style="max-height: 200px; overflow-y: auto; border: 1px solid #ddd; padding: 8px; font-size: 0.9em; background: #f9f9f9">
+          <div style="color: #888; font-style: italic">Dreams will appear here...</div>
+        </div>
+      </div>
     </div>
     <script type="module">
       import { of, Subject, EMPTY, defer, interval, fromEvent, merge, Observable } from "https://esm.sh/rxjs";
@@ -104,6 +111,7 @@
       const startLoopBtn = document.getElementById("start-loop-btn");
       const stopLoopBtn = document.getElementById("stop-loop-btn");
       const loopStatus = document.getElementById("loop-status");
+      const dreamLog = document.getElementById("dream-log");
 
       // --- Data Model and State ---
       const grid = Array.from({ length: ROWS }, () => Array(COLS).fill(""));
@@ -115,6 +123,41 @@
       let loopSubscription = null;
       const ttsNode = new TtsNode();
       const latestResponse$ = new Subject();
+      const dreamHistory = []; // Array to store the 10 most recent dreams
+
+      // --- Dream Log Functions ---
+      function addToDreamLog(dream) {
+        const timestamp = new Date().toLocaleTimeString();
+        const logEntry = { dream: dream.trim(), timestamp };
+
+        // Add to beginning of array and keep only last 10
+        dreamHistory.unshift(logEntry);
+        if (dreamHistory.length > 10) {
+          dreamHistory.pop();
+        }
+
+        updateDreamLogDisplay();
+      }
+
+      function updateDreamLogDisplay() {
+        if (dreamHistory.length === 0) {
+          dreamLog.innerHTML = '<div style="color: #888; font-style: italic;">Dreams will appear here...</div>';
+          return;
+        }
+
+        const logHtml = dreamHistory
+          .map(
+            (entry) =>
+              `<div style="margin-bottom: 6px; padding: 4px; background: white;">
+            <span style="font-weight: bold; color: #333;">${entry.dream}</span>
+            <span style="color: #666; font-size: 0.8em; float: right;">${entry.timestamp}</span>
+            <div style="clear: both;"></div>
+          </div>`
+          )
+          .join("");
+
+        dreamLog.innerHTML = logHtml;
+      }
 
       // --- API Key Management ---
       const savedApiKey = localStorage.getItem("dream:openaiApiKey");
@@ -181,6 +224,7 @@
           });
 
           console.log("Latest response:", response);
+          addToDreamLog(response);
         } catch (error) {
           if (error.name === "AbortError" || abortController.signal.aborted) {
             console.log("TTS cancelled");
@@ -251,8 +295,23 @@
             const neighborText = neighbors.filter((n) => n.trim()).join(" ");
             const prompt = neighborText
               ? `
-In your mind you have ${neighborText}.
-What happened next? Respond in Title case one word. Do NOT repeat existing words or categories.
+In your mind you see: ${neighborText}.
+What ${selectRandom([
+                  "thing",
+                  "event",
+                  "object",
+                  "scene",
+                  "imagery",
+                  "concept",
+                  "feeling",
+                  "moment",
+                  "vision",
+                  "presence",
+                ])} happened next? Respond in Title case ${selectRandom([
+                  "one word",
+                  "two-word phrase",
+                  "up to three-word phrase",
+                ])}. Do NOT repeat existing words or categories.
 `.trim()
               : `You had a dream. Summarize the dream into a short phrase in Title case, 3 word max.`;
 
@@ -445,6 +504,10 @@ What happened next? Respond in Title case one word. Do NOT repeat existing words
       });
 
       // --- Pure Functions and Utils ---
+      function selectRandom(arr) {
+        return arr[Math.floor(Math.random() * arr.length)];
+      }
+
       function resizeCanvas() {
         const dpr = window.devicePixelRatio || 1;
         const width = masterContainer.clientWidth;
@@ -522,7 +585,7 @@ What happened next? Respond in Title case one word. Do NOT repeat existing words
       function setLoopUI(running) {
         startLoopBtn.disabled = running;
         stopLoopBtn.disabled = !running;
-        loopStatus.textContent = running ? "Continuous update running..." : "";
+        loopStatus.textContent = running ? "🔊 Dreaming..." : "";
       }
 
       function getIdleEligibleCells() {
@@ -567,7 +630,7 @@ What happened next? Respond in Title case one word. Do NOT repeat existing words
       }
 
       function pickRandom(arr) {
-        return arr[Math.floor(Math.random() * arr.length)];
+        return selectRandom(arr);
       }
 
       // --- Initial Setup ---
