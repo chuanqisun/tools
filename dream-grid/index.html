@@ -79,8 +79,12 @@
     </div>
     <script type="module">
       import { of, Subject, EMPTY, defer, interval, fromEvent, merge, Observable } from "https://esm.sh/rxjs";
-      import { mergeMap, takeUntil, filter, map, delay, tap, catchError } from "https://esm.sh/rxjs/operators";
+      import { mergeMap, takeUntil, filter, map, delay, tap, sampleTime, distinctUntilChanged, catchError } from "https://esm.sh/rxjs/operators";
       import OpenAI from "https://esm.sh/openai";
+
+      import { TtsNode } from "./tts-node.js";
+
+      TtsNode.define();
 
       // --- Constants and DOM Elements ---
       const ROWS = 32;
@@ -109,6 +113,8 @@
       let loopActive = false;
       let stopLoop$ = new Subject();
       let loopSubscription = null;
+      const ttsNode = new TtsNode();
+      const latestResponse$ = new Subject();
 
       // --- API Key Management ---
       const savedApiKey = localStorage.getItem("dream:openaiApiKey");
@@ -118,6 +124,11 @@
 
       apiKeyInput.addEventListener("input", () => {
         localStorage.setItem("dream:openaiApiKey", apiKeyInput.value);
+      });
+
+      latestResponse$.pipe(distinctUntilChanged(), sampleTime(500)).subscribe((response) => {
+        ttsNode.queue(response);
+        console.log("Latest response:", response);
       });
 
       // --- RxJS Flow Control ---
@@ -180,7 +191,7 @@
             const prompt = neighborText
               ? `
 In your mind you have ${neighborText}. What happened next?
-Continue in the most strange and imaginative way. Respond in Title case one word. Do NOT repeat existing words.
+Continue in the most strange and imaginative way. Respond in Title case one word. Do NOT repeat existing words or categories.
 `.trim()
               : `You had a dream. Summarize the dream into a short phrase in Title case, 3 word max.`;
 
@@ -225,6 +236,7 @@ Continue in the most strange and imaginative way. Respond in Title case one word
                     return;
                   }
                   subscriber.next(content);
+                  latestResponse$.next(content);
                   subscriber.complete();
                 })
                 .catch((error) => {
