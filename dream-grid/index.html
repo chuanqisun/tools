@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Continuous Grid Update (RxJS, Canvas, Master-Detail)</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        margin: 0;
+        display: flex;
+        height: 100vh;
+      }
+      #master-container {
+        flex: 1;
+        overflow: auto;
+        border-right: 1px solid #ccc;
+        display: flex;
+        align-items: stretch;
+      }
+      #master-canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+        background: #fafafa;
+      }
+      #detail {
+        width: 300px;
+        padding: 16px;
+      }
+      textarea {
+        width: 100%;
+        height: 100px;
+      }
+      .cell-coord {
+        color: #888;
+        font-size: 0.9em;
+        margin-bottom: 8px;
+      }
+      #loop-controls {
+        margin-bottom: 16px;
+      }
+      #loop-status {
+        font-size: 0.95em;
+        color: #555;
+        margin-left: 8px;
+      }
+      .busy {
+        background: #ffe082 !important;
+      }
+      .idle {
+        background: #fafafa !important;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="master-container">
+      <canvas id="master-canvas"></canvas>
+    </div>
+    <div id="detail">
+      <div id="loop-controls">
+        <button id="start-loop-btn">Start Continuous Update</button>
+        <button id="stop-loop-btn" disabled>Stop</button>
+        <span id="loop-status"></span>
+      </div>
+      <div id="detail-content" style="display: none">
+        <div class="cell-coord" id="cell-coord"></div>
+        <textarea id="cell-editor"></textarea>
+        <div>
+          <button id="save-btn">Save</button>
+          <button id="close-btn">Close</button>
+        </div>
+      </div>
+      <div id="detail-placeholder">Select a cell to edit.</div>
+      <br />
+      <div>
+        <label>OpenAI API Key<br /></label>
+        <input type="password" id="openai-api-key" />
+      </div>
+    </div>
+    <script type="module">
+      import { of, Subject, EMPTY, defer, interval, fromEvent, merge, Observable } from "https://esm.sh/rxjs";
+      import { mergeMap, takeUntil, filter, map, delay, tap, catchError } from "https://esm.sh/rxjs/operators";
+      import OpenAI from "https://esm.sh/openai";
+
+      // --- Constants and DOM Elements ---
+      const ROWS = 32;
+      const COLS = 32;
+
+      // DOM Elements
+      const masterContainer = document.getElementById("master-container");
+      const canvas = document.getElementById("master-canvas");
+      const ctx = canvas.getContext("2d");
+      const apiKeyInput = document.getElementById("openai-api-key");
+      const detailContent = document.getElementById("detail-content");
+      const detailPlaceholder = document.getElementById("detail-placeholder");
+      const cellCoord = document.getElementById("cell-coord");
+      const cellEditor = document.getElementById("cell-editor");
+      const saveBtn = document.getElementById("save-btn");
+      const closeBtn = document.getElementById("close-btn");
+      const startLoopBtn = document.getElementById("start-loop-btn");
+      const stopLoopBtn = document.getElementById("stop-loop-btn");
+      const loopStatus = document.getElementById("loop-status");
+
+      // --- Data Model and State ---
+      const grid = Array.from({ length: ROWS }, () => Array(COLS).fill(""));
+      const cellState = Array.from({ length: ROWS }, () => Array(COLS).fill("idle")); // 'idle' | 'busy'
+      let selected = null; // {row, col}
+      let cellSize = 20; // Will be dynamically calculated
+      let loopActive = false;
+      let stopLoop$ = new Subject();
+      let loopSubscription = null;
+
+      // --- API Key Management ---
+      const savedApiKey = localStorage.getItem("dream:openaiApiKey");
+      if (savedApiKey) {
+        apiKeyInput.value = savedApiKey;
+      }
+
+      apiKeyInput.addEventListener("input", () => {
+        localStorage.setItem("dream:openaiApiKey", apiKeyInput.value);
+      });
+
+      // --- RxJS Flow Control ---
+      function processCell({ row, col }) {
+        return defer(() => {
+          cellState[row][col] = "busy";
+          renderGrid();
+
+          const neighbors = getNeighbors(row, col);
+
+          const contentfulNeighbors = neighbors.filter((n, index) => {
+            // Calculate neighbor position
+            const dr = Math.floor(index / 3) - 1;
+            const dc = (index % 3) - 1;
+            if (dr === 0 && dc === 0) return false; // Skip center
+
+            const neighborRow = row + dr;
+            const neighborCol = col + dc;
+
+            // Only count if neighbor has content AND is idle
+            return (
+              n.trim() && neighborRow >= 0 && neighborRow < ROWS && neighborCol >= 0 && neighborCol < COLS && cellState[neighborRow][neighborCol] === "idle"
+            );
+          }).length;
+
+          if (contentfulNeighbors >= 3) {
+            // Cell dies due to crowding
+            grid[row][col] = "";
+            return of(true).pipe(
+              delay(100),
+              takeUntil(stopLoop$),
+              tap(() => {
+                cellState[row][col] = "idle";
+                renderGrid();
+              }),
+              catchError(() => {
+                cellState[row][col] = "idle";
+                renderGrid();
+                return EMPTY;
+              })
+            );
+          }
+
+          if (Math.random() < 0.7) {
+            grid[row][col] = "";
+            return of(true).pipe(
+              delay(100),
+              takeUntil(stopLoop$),
+              tap(() => {
+                cellState[row][col] = "idle";
+                renderGrid();
+              }),
+              catchError(() => {
+                cellState[row][col] = "idle";
+                renderGrid();
+                return EMPTY;
+              })
+            );
+          } else {
+            const neighborText = neighbors.filter((n) => n.trim()).join(" ");
+            const prompt = neighborText
+              ? `
+In your mind you have ${neighborText}. What happened next?
+Continue in the most strange and imaginative way. Respond in Title case a few words max`.trim()
+              : `You had a dream. Summarize the dream into a short phrase in Title case, 3 word max.`;
+
+            const apiCall$ = new Observable((subscriber) => {
+              const abortController = new AbortController();
+
+              const stopSubscription = stopLoop$.subscribe(() => {
+                abortController.abort();
+                subscriber.error(new Error("Cancelled"));
+              });
+
+              if (!apiKeyInput.value.trim()) {
+                const fallback =
+                  neighbors
+                    .filter((n) => n.trim())
+                    .join("")
+                    .substring(0, 10) || "dream";
+                subscriber.next(fallback);
+                subscriber.complete();
+                return;
+              }
+
+              const openai = new OpenAI({
+                apiKey: savedApiKey || "",
+                dangerouslyAllowBrowser: true,
+              });
+
+              openai.responses
+                .create(
+                  {
+                    model: "gpt-4.1-mini",
+                    input: prompt,
+                    max_output_tokens: 20,
+                    temperature: 0.8,
+                  },
+                  { signal: abortController.signal }
+                )
+                .then(async (response) => {
+                  const content = await response.output_text;
+                  if (abortController.signal.aborted) {
+                    subscriber.error(new Error("Cancelled"));
+                    return;
+                  }
+                  subscriber.next(content);
+                  subscriber.complete();
+                })
+                .catch((error) => {
+                  if (error.name === "AbortError" || abortController.signal.aborted) {
+                    subscriber.error(new Error("Cancelled"));
+                    return;
+                  }
+                  console.warn("OpenAI API error:", error);
+                  const fallback =
+                    neighbors
+                      .filter((n) => n.trim())
+                      .join("")
+                      .substring(0, 10) || "dream";
+                  subscriber.next(fallback);
+                  subscriber.complete();
+                });
+
+              return () => {
+                abortController.abort();
+                stopSubscription.unsubscribe();
+              };
+            });
+
+            return apiCall$.pipe(
+              takeUntil(stopLoop$),
+              tap((result) => {
+                grid[row][col] = result;
+                renderGrid();
+              }),
+              mergeMap(() => of(true).pipe(delay(Math.random() * 2000 + 1000), takeUntil(stopLoop$))),
+              tap(() => {
+                cellState[row][col] = "idle";
+                renderGrid();
+              }),
+              catchError((error) => {
+                cellState[row][col] = "idle";
+                renderGrid();
+                return EMPTY;
+              })
+            );
+          }
+        }).pipe(
+          takeUntil(stopLoop$),
+          catchError((error) => {
+            cellState[row][col] = "idle";
+            renderGrid();
+            return EMPTY;
+          })
+        );
+      }
+
+      function startContinuousUpdate() {
+        stopLoop$ = new Subject();
+
+        loopSubscription = interval(100)
+          .pipe(
+            takeUntil(stopLoop$),
+            mergeMap(() => {
+              const eligible = getIdleEligibleCells();
+              if (!eligible.length) return EMPTY;
+              const cell = pickRandom(eligible);
+              return processCell(cell);
+            }, 18),
+            catchError((error) => {
+              console.warn("Error in continuous update:", error);
+              return EMPTY;
+            })
+          )
+          .subscribe({
+            next: () => {},
+            error: (error) => {
+              console.error("Continuous update stream error:", error);
+              loopActive = false;
+              setLoopUI(false);
+            },
+            complete: () => {
+              loopActive = false;
+              setLoopUI(false);
+            },
+          });
+      }
+
+      // --- Event Handlers ---
+      canvas.addEventListener("click", function (e) {
+        const rect = canvas.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        const x = ((e.clientX - rect.left) * dpr) / dpr;
+        const y = ((e.clientY - rect.top) * dpr) / dpr;
+        const col = Math.floor(x / cellSize);
+        const row = Math.floor(y / cellSize);
+        if (row >= 0 && row < ROWS && col >= 0 && col < COLS) {
+          openDetail(row, col);
+        }
+      });
+
+      saveBtn.addEventListener("click", () => {
+        if (selected) {
+          grid[selected.row][selected.col] = cellEditor.value;
+          renderGrid();
+        }
+      });
+
+      closeBtn.addEventListener("click", closeDetail);
+
+      startLoopBtn.addEventListener("click", () => {
+        if (!loopActive) {
+          loopActive = true;
+          setLoopUI(true);
+          startContinuousUpdate();
+        }
+      });
+
+      stopLoopBtn.addEventListener("click", () => {
+        if (loopActive) {
+          stopLoop$.next();
+          stopLoop$.complete();
+          if (loopSubscription) {
+            loopSubscription.unsubscribe();
+            loopSubscription = null;
+          }
+          loopActive = false;
+          setLoopUI(false);
+
+          for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c < COLS; c++) {
+              if (cellState[r][c] === "busy") {
+                cellState[r][c] = "idle";
+              }
+            }
+          }
+          renderGrid();
+        }
+      });
+
+      window.addEventListener("resize", resizeCanvas);
+
+      window.addEventListener("beforeunload", () => {
+        if (loopActive) {
+          stopLoop$.next();
+          stopLoop$.complete();
+          if (loopSubscription) {
+            loopSubscription.unsubscribe();
+          }
+        }
+      });
+
+      // --- Pure Functions and Utils ---
+      function resizeCanvas() {
+        const dpr = window.devicePixelRatio || 1;
+        const width = masterContainer.clientWidth;
+        const height = masterContainer.clientHeight;
+        canvas.width = width * dpr;
+        canvas.height = height * dpr;
+        canvas.style.width = width + "px";
+        canvas.style.height = height + "px";
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.scale(dpr, dpr);
+
+        cellSize = Math.floor(Math.min(width / COLS, height / ROWS));
+        renderGrid();
+      }
+
+      function renderGrid() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        const width = masterContainer.clientWidth;
+        const height = masterContainer.clientHeight;
+
+        ctx.font = `${Math.max(cellSize - 6, 8)}px sans-serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+
+        for (let r = 0; r < ROWS; r++) {
+          for (let c = 0; c < COLS; c++) {
+            const x = c * cellSize;
+            const y = r * cellSize;
+
+            if (selected && selected.row === r && selected.col === c) {
+              ctx.fillStyle = "#b3d4fc";
+              ctx.fillRect(x, y, cellSize, cellSize);
+            } else if (cellState[r][c] === "busy") {
+              ctx.fillStyle = "#ffe082";
+              ctx.fillRect(x, y, cellSize, cellSize);
+            } else {
+              ctx.fillStyle = "#fafafa";
+              ctx.fillRect(x, y, cellSize, cellSize);
+            }
+
+            const val = grid[r][c];
+            if (val) {
+              ctx.save();
+              ctx.beginPath();
+              ctx.arc(x + cellSize / 2, y + cellSize / 2, cellSize * 0.3, 0, 2 * Math.PI);
+              ctx.fillStyle = "#ff6f61";
+              ctx.globalAlpha = 0.85;
+              ctx.fill();
+              ctx.globalAlpha = 1.0;
+              ctx.restore();
+            }
+
+            ctx.strokeStyle = "#ddd";
+            ctx.strokeRect(x, y, cellSize, cellSize);
+          }
+        }
+      }
+
+      function openDetail(row, col) {
+        selected = { row, col };
+        cellCoord.textContent = `Cell [${row}, ${col}]`;
+        cellEditor.value = grid[row][col];
+        detailContent.style.display = "";
+        detailPlaceholder.style.display = "none";
+        renderGrid();
+      }
+
+      function closeDetail() {
+        selected = null;
+        detailContent.style.display = "none";
+        detailPlaceholder.style.display = "";
+        renderGrid();
+      }
+
+      function setLoopUI(running) {
+        startLoopBtn.disabled = running;
+        stopLoopBtn.disabled = !running;
+        loopStatus.textContent = running ? "Continuous update running..." : "";
+      }
+
+      function getIdleEligibleCells() {
+        const eligible = [];
+        for (let r = 0; r < ROWS; r++) {
+          for (let c = 0; c < COLS; c++) {
+            if (cellState[r][c] !== "idle") continue;
+            if (grid[r][c]) {
+              eligible.push({ row: r, col: c });
+              continue;
+            }
+            const siblings = [
+              [r - 1, c],
+              [r, c + 1],
+              [r + 1, c],
+              [r, c - 1],
+            ];
+            for (const [rr, cc] of siblings) {
+              if (rr >= 0 && rr < ROWS && cc >= 0 && cc < COLS && grid[rr][cc]) {
+                eligible.push({ row: r, col: c });
+                break;
+              }
+            }
+          }
+        }
+        return eligible;
+      }
+
+      function getNeighbors(row, col) {
+        const neighbors = [];
+        for (let dr = -1; dr <= 1; dr++) {
+          for (let dc = -1; dc <= 1; dc++) {
+            if (dr === 0 && dc === 0) continue;
+            const rr = row + dr,
+              cc = col + dc;
+            if (rr >= 0 && rr < ROWS && cc >= 0 && cc < COLS) {
+              neighbors.push(grid[rr][cc]);
+            }
+          }
+        }
+        return neighbors;
+      }
+
+      function pickRandom(arr) {
+        return arr[Math.floor(Math.random() * arr.length)];
+      }
+
+      // --- Initial Setup ---
+      resizeCanvas();
+    </script>
+  </body>
+</html>
