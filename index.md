@@ -1,4 +1,4 @@
- ⚠️ This project has been migrated to [github.com/chuanqisun/code](https://github.com/chuanqisun/code). You are viewing an archived version here.
+ ⚠️ This project has been migrated to [code.chuanqisun.com](https://code.chuanqisun.com). You are viewing an archived version here.
 
 ## Tools
 
