@@ -1,4 +1,1 @@
-# Tools
-
-Single purpose tools in a single HTML file
-
+See [github.com/chuanqisun/code](https://github.com/chuanqisun/code)
