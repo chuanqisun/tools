@@ -1,4 +1,4 @@
-[Add](https://github.dev/chuanqisun/tools) · [Repo](https://github.com/chuanqisun/tools/)
+ ⚠️ This project has been migrated to [github.com/chuanqisun/code](https://github.com/chuanqisun/code). You are viewing an archived version here.
 
 ## Tools
 
